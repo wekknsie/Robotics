@@ -9,6 +9,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# GTests setup
+add_subdirectory(tests)
+
 add_executable(Lab2KK
   src/main.cpp
   src/lib.cpp
