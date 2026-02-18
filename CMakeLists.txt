@@ -1,22 +1,38 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.20)
+project(prp_project)
 
-project(Lab2KK VERSION 1.0
-        DESCRIPTION "Very nice project"
-        LANGUAGES CXX)
+if(NOT CMAKE_CXX_STANDARD)
+    set(CMAKE_CXX_STANDARD 17)
+endif()
 
-# Prefer target-specific settings in modern CMake. If you want a global default:
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(cv_bridge REQUIRED)
+find_package(image_transport REQUIRED)
+find_package(OpenCV REQUIRED)
+find_package(SDL2 REQUIRED)
+find_package(visualization_msgs REQUIRED)
 
-# GTests setup
-add_subdirectory(tests)
-
-add_executable(Lab2KK
-  src/main.cpp
-  src/lib.cpp
+set(SRC
+    ${CMAKE_SOURCE_DIR}/src/example.cpp
+    ${CMAKE_SOURCE_DIR}/src/nodes/io_node.cpp
 )
 
-# Tell the target where to find headers under include/
-# Use PUBLIC to propagate include paths to dependents (if this were a library).
-target_include_directories(Lab2KK PUBLIC ${CMAKE_SOURCE_DIR}/include)
+set(AMENT_LIBS rclcpp std_msgs sensor_msgs cv_bridge image_transport)
+
+add_executable(${PROJECT_NAME} src/main.cpp ${SRC})
+target_include_directories(${PROJECT_NAME} PUBLIC
+        include
+        ${OpenCV_INCLUDE_DIRS}
+        ${SDL2_INCLUDE_DIRS}
+        /opt/ros/humble/include
+)
+target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS} ${SDL2_LIBS})
+ament_target_dependencies(${PROJECT_NAME} rclcpp std_msgs sensor_msgs cv_bridge image_transport visualization_msgs)
+
+install(TARGETS ${PROJECT_NAME} DESTINATION lib/${PROJECT_NAME})
+ament_package()
+
+add_subdirectory(tests)

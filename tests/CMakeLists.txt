@@ -1,9 +1,15 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.20)
+
+include_directories(../include)
 
 find_package(GTest REQUIRED)
-include(GoogleTest)
 enable_testing()
 
-add_executable(my_test my_test.cpp)
-target_link_libraries(my_test GTest::GTest GTest::Main)
-gtest_discover_tests(my_test)
+macro(make_units_test name)
+    add_executable(${name} t_${name}.cpp ${SRC})
+    target_link_libraries(${name} GTest::GTest GTest::Main)
+    ament_target_dependencies(${name} rclcpp std_msgs sensor_msgs cv_bridge image_transport visualization_msgs)
+    add_test(NAME ${name} COMMAND ${name})
+endmacro()
+
+make_units_test(example)
