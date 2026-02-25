@@ -1,10 +1,11 @@
-
+/*
 #pragma once
 
 #include <iostream>
 #include <string>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/float32.hpp>
+#include <std_msgs/msg/u_int8.hpp>
 #include <chrono>
 
 class RosExampleClass {
@@ -14,10 +15,10 @@ public:
         : node_(node), start_time_(node_->now()) {
 
         // Initialize the publisher
-        publisher_ = node_->create_publisher<std_msgs::msg::Float32>(topic, 1);
+        publisher_ = node_->create_publisher<std_msgs::msg::UInt8>(topic, 1);
 
         // Initialize the subscriber
-        subscriber_ = node_->create_subscription<std_msgs::msg::Float32>(
+        subscriber_ = node_->create_subscription<std_msgs::msg::UInt8>(
             topic, 1, std::bind(&RosExampleClass::subscriber_callback, this, std::placeholders::_1));
 
         // Create a timer
@@ -25,6 +26,7 @@ public:
             timer_ = node_->create_wall_timer(
                 std::chrono::milliseconds(static_cast<int>(1000.0 / freq)),
                 std::bind(&RosExampleClass::timer_callback, this));
+                
         }else{
             timer_ = node_->create_wall_timer(
                 std::chrono::milliseconds(static_cast<int>(1000.0 / freq)),
@@ -42,14 +44,14 @@ private:
         double uptime = (node_->now() - start_time_).seconds();
         
         double result = (std::sin(uptime) + 1) * 500;
-        publish_message(result);
+        //publish_message(result);
     }
     void timer_callback2() {
         RCLCPP_INFO(node_->get_logger(), "Timer triggered. Publishing uptime...");
 
         double uptime = (node_->now() - start_time_).seconds();
         double result = (std::cos(uptime) + 1) * 500;
-        publish_message(result);
+        //publish_message(result);
     }
     void subscriber_callback(const std_msgs::msg::Float32::SharedPtr msg) {
         RCLCPP_INFO(node_->get_logger(), "Received: %f", msg->data);
@@ -62,6 +64,11 @@ private:
         RCLCPP_INFO(node_->get_logger(), "Published: %f", msg.data);
     }
 
+
+    void get_button_pressed(const std_msgs::msg::UInt8::SharedPtr msg) {
+             button_pressed_ = msg->data;
+             RCLCPP_INFO(node_->get_logger(), "Received button press: %d", button_pressed_);
+         }
     // Shared pointer to the main ROS node
     rclcpp::Node::SharedPtr node_;
 
@@ -74,3 +81,4 @@ private:
     rclcpp::Time start_time_;
 };
 
+*/

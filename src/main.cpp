@@ -1,6 +1,10 @@
 #include <rclcpp/rclcpp.hpp>
 #include "RosExampleClass.hpp"
 
+#include "./nodes/io_node.hpp"
+#include "./nodes/led_publisher.hpp"
+#include "shared_place.hpp"
+
 int main(int argc, char* argv[]) {
     rclcpp::init(argc, argv);
 
@@ -8,16 +12,14 @@ int main(int argc, char* argv[]) {
     auto executor = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
 
     // Create multiple nodes
-    auto node1 = std::make_shared<rclcpp::Node>("node1");
-    auto node2 = std::make_shared<rclcpp::Node>("node2");
+    auto state = std::make_shared<SharedState>();
 
-    // Create instances of RosExampleClass using the existing nodes
-    auto example_class1 = std::make_shared<RosExampleClass>(node1, "topic1", 1.0);
-    auto example_class2 = std::make_shared<RosExampleClass>(node2, "topic2", 2.0);
+    auto subscriber = std::make_shared<MinimalSubscriber>(state);
+    auto publisher = std::make_shared<MinimalPublisher>(state);
 
     // Add nodes to the executor
-    executor->add_node(node1);
-    executor->add_node(node2);
+    executor->add_node(subscriber);
+    executor->add_node(publisher);
 
     // Run the executor (handles callbacks for both nodes)
     executor->spin();
