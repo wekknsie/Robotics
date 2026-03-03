@@ -10,14 +10,14 @@
 
 using std::placeholders::_1;
 
-class MinimalSubscriber : public rclcpp::Node
+class ButtonNode : public rclcpp::Node
 {
   public:
-    MinimalSubscriber(std::shared_ptr<SharedState> state)
-    : Node("minimal_subscriber"), state_(state)
+    ButtonNode(std::shared_ptr<SharedState> state)
+    : Node("button_node"), state_(state)
     {
       subscription_ = this->create_subscription<std_msgs::msg::UInt8>(
-      "/bpc_prp_robot/buttons", 10, std::bind(&MinimalSubscriber::topic_callback, this, _1));
+      "/bpc_prp_robot/buttons", 10, std::bind(&ButtonNode::topic_callback, this, _1));
     }
 
     int getButtonState()
@@ -35,7 +35,6 @@ class MinimalSubscriber : public rclcpp::Node
       RCLCPP_INFO(this->get_logger(), "I heard: '%u'", msg->data);
       button_pressed_ = msg->data;
       state_->last_button = button_pressed_;
-      state_->have_data.store(true);
     }
     rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr subscription_;
     std::shared_ptr<SharedState> state_;

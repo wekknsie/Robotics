@@ -14,12 +14,12 @@ int main(int argc, char* argv[]) {
     // Create multiple nodes
     auto state = std::make_shared<SharedState>();
 
-    auto subscriber = std::make_shared<MinimalSubscriber>(state);
-    auto publisher = std::make_shared<MinimalPublisher>(state);
+    auto buttonNode = std::make_shared<ButtonNode>(state);
+    auto ledNode = std::make_shared<LedNode>(state);
 
     // Add nodes to the executor
-    executor->add_node(subscriber);
-    executor->add_node(publisher);
+    executor->add_node(buttonNode);
+    executor->add_node(ledNode);
 
     // Run the executor (handles callbacks for both nodes)
     executor->spin();
