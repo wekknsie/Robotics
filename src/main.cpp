@@ -3,6 +3,7 @@
 
 #include "./nodes/io_node.hpp"
 #include "./nodes/led_publisher.hpp"
+#include "./nodes/motor_node.hpp"
 #include "shared_place.hpp"
 
 int main(int argc, char* argv[]) {
@@ -16,10 +17,12 @@ int main(int argc, char* argv[]) {
 
     auto buttonNode = std::make_shared<ButtonNode>(state);
     auto ledNode = std::make_shared<LedNode>(state);
+    auto motorNode = std::make_shared<MotorNode>(state);
 
     // Add nodes to the executor
     executor->add_node(buttonNode);
     executor->add_node(ledNode);
+    executor->add_node(motorNode);
 
     // Run the executor (handles callbacks for both nodes)
     executor->spin();

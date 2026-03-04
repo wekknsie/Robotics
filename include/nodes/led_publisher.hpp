@@ -31,7 +31,7 @@ private:
     std_msgs::msg::UInt8MultiArray message;
 
     int button_state = state_->last_button.load();
-    RCLCPP_INFO(this->get_logger(), "Button state: %d", button_state);
+    //RCLCPP_INFO(this->get_logger(), "Button state: %d", button_state);
 
     if(button_state == 0)
     {
@@ -55,8 +55,8 @@ private:
         
         if(fadeUp){
             fade += 5;
-            if(fade >= 150){
-                fade = 150;
+            if(fade >= 120){
+                fade = 120;
                 fadeUp = false;
             }
         }else{
@@ -70,7 +70,7 @@ private:
         switch(cycle){
             case 0:{
                 message.data = {
-                        fade, fade, fade, 0,0,0, 0,0,0, 0,0,0, 
+                        (uint8_t)fade, (uint8_t)fade, (uint8_t)fade, 0,0,0, 0,0,0, 0,0,0, 
                     };
                 break;
                 }
@@ -97,8 +97,8 @@ private:
         }
     }
 
-    RCLCPP_INFO(this->get_logger(), "Publishing %zu bytes, first=%u, cycle=%d",
-                message.data.size(), message.data.empty() ? 0 : message.data[0], cycle);
+    //RCLCPP_INFO(this->get_logger(), "Publishing %zu bytes, first=%u, cycle=%d",
+    //            message.data.size(), message.data.empty() ? 0 : message.data[0], cycle);
 
     publisher_->publish(message);
     ++count_;
