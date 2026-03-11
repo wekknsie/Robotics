@@ -67,7 +67,7 @@ private:
     }
 
     int button_state = state_->last_button.load();
-    if(button_state == 1){
+    if(button_state == 0){
       speedLeftWheel = 127;
       speedRightWheel = 127;
       return;
@@ -113,14 +113,20 @@ private:
     
     theta += d0;
     
-    handleStraightMovement(theta);
+    //handleStraightMovement(theta);
+    if(button_state == 2){
+      bangBang();
+    } else if(button_state == 1){
+      //handleStraightMovement(theta);
+    }
+    
 
     //RCLCPP_INFO(this->get_logger(), "Delta Left: %f m, Delta Right: %f m", dsL, dsR);
     //RCLCPP_INFO(this->get_logger(), "Total Left: %f m, Total Right: %f m", leftWheelDistance, std::abs(rightWheelDistance));
-    RCLCPP_INFO(this->get_logger(),
+    /*RCLCPP_INFO(this->get_logger(),
             "dsL=%.4f m, dsR=%.4f m | pose: x=%.3f y=%.3f theta=%.3f, speedLeftWheel=%u, speedRightWheel=%u",
             dsL, dsR, x, y, theta, speedLeftWheel, speedRightWheel);
-
+    */
     //RCLCPP_INFO(this->get_logger(), "Encoder[0]=%u", msg->data[0]);
   }
 
@@ -140,6 +146,30 @@ private:
       speedLeftWheel = 130;
       speedRightWheel = 140;
     }
+  }
+
+  void bangBang(){
+    double error = (state_->left_sensor - state_->right_sensor); 
+
+    double k = 15;
+    double correction = k * error;
+    
+    int baseSpeed = 135;
+
+    if(std::abs(error) > 0.4) { // Need to turn more sharply, reduce base speed to allow for greater correction
+      baseSpeed = 130;
+    }
+
+    int left = static_cast<int>(baseSpeed + correction);
+    int right = static_cast<int>(baseSpeed - correction);
+
+    left = std::clamp(left, 127, 150);
+    right = std::clamp(right, 127, 150);
+
+    RCLCPP_INFO(this->get_logger(), "Error: %.4f, Correction: %.4f, Left: %d, Right: %d", error, correction, left, right);
+
+    speedLeftWheel = static_cast<uint8_t>(left);
+    speedRightWheel = static_cast<uint8_t>(right);
   }
 
   /**

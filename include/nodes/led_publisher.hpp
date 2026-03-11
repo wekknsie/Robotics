@@ -36,13 +36,13 @@ private:
     if(button_state == 0)
     {
         message.data = {
-            20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20
+            60, 5, 5, 60, 5, 5, 60, 5, 5, 60, 5, 5
             };
     }
     else if(button_state == 1)
     {
-       message.data = {
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        message.data = {
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
         };
     }
     else if(button_state == 2)
