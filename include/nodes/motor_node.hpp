@@ -151,9 +151,22 @@ private:
   void bangBang(){
     double error = (state_->left_sensor - state_->right_sensor); 
 
-    double k = 15;
-    double correction = k * error;
-    
+    double dt=0.05;
+    double k = 5.0;
+    double ki = 0.0;
+    double kd = 0.02;
+    //double correction = k * error;
+
+    double Kp = k * error;
+    integral_ += error *dt;
+    double Ki =  integral_*ki;
+
+    double derivative = (error - prev_error_) / dt;
+    /*double Kd = derivative*kd;
+    double correction = Kp + Ki+ Kd;*/
+
+    double correction = k * error + ki * integral_ + kd * derivative;
+
     int baseSpeed = 135;
 
     if(std::abs(error) > 0.4) { // Need to turn more sharply, reduce base speed to allow for greater correction
@@ -170,6 +183,8 @@ private:
 
     speedLeftWheel = static_cast<uint8_t>(left);
     speedRightWheel = static_cast<uint8_t>(right);
+
+    prev_error_ = error;
   }
 
   /**
@@ -206,6 +221,9 @@ private:
     int l; //left
     int r; //right
   };
+
+  double prev_error_ = 0.0;
+  double integral_ = 0.0;
 
   uint32_t prevLeft = 0;
   int64_t accumulatedLeft = 0;

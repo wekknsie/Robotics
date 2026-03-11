@@ -33,68 +33,39 @@ private:
     int button_state = state_->last_button.load();
     //RCLCPP_INFO(this->get_logger(), "Button state: %d", button_state);
 
-    if(button_state == 0)
+    if(button_state == 0) // turned off -> all LEDs are red
     {
         message.data = {
-            60, 5, 5, 60, 5, 5, 60, 5, 5, 60, 5, 5
+            60, 1, 1, 60, 1, 1, 60, 1, 1, 60, 1, 1
             };
     }
-    else if(button_state == 1)
+    else if(button_state == 1) // nothing for now -> all LEDs are off
     {
         message.data = {
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
         };
     }
-    else if(button_state == 2)
+    else if(button_state == 2) // following line -> LEDs are cycling green
     {        
-        tick++;
-        if(tick >= 25){
-            tick = 0;
-            cycle = (cycle + 1) % 8;
-        }
-        
-        if(fadeUp){
-            fade += 5;
-            if(fade >= 120){
-                fade = 120;
-                fadeUp = false;
-            }
-        }else{
-            fade -= 5;
-            if(fade <= 0){
-                fade = 0;
-                fadeUp = true;
-            }
+        message.data.resize(12, 0);
+
+        fade += 3;
+
+        if (fade >= 75) {
+            fade = 0;
+            cycle = (cycle + 1) % 4;
         }
 
-        switch(cycle){
-            case 0:{
-                message.data = {
-                        (uint8_t)fade, (uint8_t)fade, (uint8_t)fade, 0,0,0, 0,0,0, 0,0,0, 
-                    };
-                break;
-                }
-            case 2:
-                message.data = {
-                    0,0,0, 20,20,20, 0,0,0, 0,0,0 
-                };
-                break;
-            case 4:
-                message.data = {
-                    0,0,0, 0,0,0, 0,0,0, 20,20,20
-                };
-                break;
-            case 6:
-                message.data = {
-                    0,0,0, 0,0,0, 20,20,20, 0,0,0
-                };
-                break;
-            default:
-                message.data = {
-                    0,0,0, 0,0,0, 0,0,0, 0,0,0
-                };
-                break;
-        }
+        const int led_map[4] = {0, 1, 3, 2};
+
+        int current_led = led_map[cycle];
+        int next_led = led_map[(cycle + 1) % 4];
+
+        uint8_t up = static_cast<uint8_t>(fade);
+        uint8_t down = static_cast<uint8_t>(75 - fade);
+
+        message.data[current_led * 3 + 1] = down;
+        message.data[next_led * 3 + 1] = up;
     }
 
     //RCLCPP_INFO(this->get_logger(), "Publishing %zu bytes, first=%u, cycle=%d",
