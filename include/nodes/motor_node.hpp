@@ -66,6 +66,13 @@ private:
       return;
     }
 
+    int button_state = state_->last_button.load();
+    if(button_state == 1){
+      speedLeftWheel = 127;
+      speedRightWheel = 127;
+      return;
+    }
+
     uint32_t nowL = msg->data[0]; // store both current left and right encoder readings
     uint32_t nowR = msg->data[1];
 
