@@ -148,91 +148,104 @@ private:
     }
   }
 
-   void corridorNavigation(){
-    double front = state_->lidarFront;
-    double left = state_->lidarLeft;
-    double right = state_->lidarRight;
+  void corridorNavigation(){
+    switch(corridorState){
+      case CALIBRATION:
+        // TODO make calibration to gain data from IMU
+        integral_ = 0.0;
+        corridorState = CORRIDOR_NAVIGATION;
+        break;
+      case CORRIDOR_NAVIGATION:{
+        double front = state_->lidarFront;
+        double left = state_->lidarLeft;
+        double right = state_->lidarRight;
 
-    const double frontStop = 0.15;
-    const double frontSlow = 0.30;
+        RCLCPP_INFO(this->get_logger(), "Lidar Front: %.4f, Left: %.4f, Right: %.4f", front, left, right);
 
-    if(front < frontStop){
-      integral_ = 0.0;
-      
-      /*if(left > right){
-        speedLeftWheel = 128;
-        speedRightWheel = 140;
-      } else {
-        speedLeftWheel = 140;
-        speedRightWheel = 128;
-      }*/
-      return;
-    }
-    
-    int baseSpeedCorridor = 140;
-    if(front < frontSlow){
-      baseSpeedCorridor = 135;
-    }
+        const double frontStop = 0.2;
+        const double frontSlow = 0.3;
+
+        if(front < frontStop){ // NEED TO TURN, stop and change state to TURNING
+          integral_ = 0.0;
+          speedLeftWheel = 127;
+          speedRightWheel = 127;
+          corridorState = TURNING;
+          break;
+        }
         
-    double error = left - right;
-    regulatorPID_lidar(error, baseSpeedCorridor);
+        int baseSpeedCorridor = 140;
+        if(front < frontSlow){
+          baseSpeedCorridor = 135; // TODO tune this value after testing
+        }
+             
+
+        double error = right - left;
+        regulatorPID_lidar(error, baseSpeedCorridor);
+        
+        break;
+      }
+      case TURNING:
+        RCLCPP_INFO(this->get_logger(), "TURNING");
+        break;
+    }
   }
 
   void regulatorPID_lidar(double error, int baseSpeed){
-    double dt = 0.05;
+    static auto last_time = this->now();
 
-    double k =  2.0;
-    double ki = 0.01;
-    double kd = 0.5;
+    auto now = this->now();
+    double dt = (now - last_time).seconds();
+    last_time = now;
 
+    if (dt <= 0.0) dt = 0.01;
+    if (dt > 0.05) dt = 0.05;
+    
+    //double dt = 0.01;
+
+    double kp = 2.0;
+    double kd = 0.08;
+    double ki = 0.0;
+    
     if (std::abs(error) < 0.05) {
-       error = 0.0;
+        error = 0.0;
     }
 
-    double Kp = k * error;
-    integral_ += error *dt;
-    double Ki =  integral_*ki;
+    integral_ += error * dt;
+    integral_ = std::clamp(integral_, -10.0, 10.0);
 
     double derivative = (error - prev_error_) / dt;
     derivative = std::clamp(derivative, -1.0, 1.0);
-   
-    double correction = k * error + ki * integral_ + kd * derivative;
 
-    /*if(std::abs(error) > 0.4) { // Need to turn more sharply, reduce base speed to allow for greater correction
-      baseSpeed = 130;
-    }*/
+    double correction = 5 * (kp * error + ki * integral_ + kd * derivative);
+    
+    int left = static_cast<int>(baseSpeed - correction);
+    int right = static_cast<int>(baseSpeed + correction);
 
-    int left = static_cast<int>(baseSpeed + correction);
-    int right = static_cast<int>(baseSpeed - correction);
-
-    left = std::clamp(left, 127, 150);
-    right = std::clamp(right, 127, 150);
-
-    //RCLCPP_INFO(this->get_logger(), "Error: %.4f, Correction: %.4f, Left: %d, Right: %d", error, correction, left, right);
-    RCLCPP_INFO(this->get_logger(), "BASE SPEED: %d", baseSpeed);
+    left = std::clamp(left, 127, 155);
+    right = std::clamp(right, 127, 155);
 
     speedLeftWheel = static_cast<uint8_t>(left);
     speedRightWheel = static_cast<uint8_t>(right);
 
-    prev_error_ = error;
+    RCLCPP_INFO(this->get_logger(), "Lidar Error: %.4f, Correction: %.4f, Left: %d, Right: %d", error, correction, left, right);
 
+    prev_error_ = error;
   }
 
   void regulatorPID_line(const double error){
     //double error = (state_->left_sensor - state_->right_sensor); 
     
-    // new values
-    /*double dt=0.05;
-    double k = 4.0;
-    double ki = 0.2;
-    double kd = 0.01;*/
+    // bad values
+    //double dt = 0.05;
+    //double k =  4;
+    //double ki = 0.0;
+    //double kd = 0.01;
     
-    // old values
+    // FINAL VALUES
     double dt = 0.05;
     double k = 5.0;
     double ki = 0.0;
     double kd = 0.02;
-    //double correction = k * error;
 
     double Kp = k * error;
     integral_ += error *dt;
@@ -245,7 +258,7 @@ private:
     double correction = k * error + ki * integral_ + kd * derivative;
 
     int baseSpeed = 135;
-
+    
     if(std::abs(error) > 0.4) { // Need to turn more sharply, reduce base speed to allow for greater correction
       baseSpeed = 130;
     }
@@ -284,21 +297,17 @@ private:
 
     return ticks;
   }
-  
-  struct RobotSpeed{
-    float v; //linear
-    float w; //angluar
+
+  // Corridor navigation variables
+  enum corridor_state {
+    CALIBRATION = 0,
+    CORRIDOR_NAVIGATION = 1,
+    TURNING = 2
   };
 
-  struct WheelSpeed{ //depends on you in what units
-    float l; //left
-    float r; //right
-  };
+  corridor_state corridorState = CALIBRATION;
 
-  struct Encoders{
-    int l; //left
-    int r; //right
-  };
+  // -----------------------------------
   
   double prev_error_ = 0.0;
   double integral_ = 0.0;

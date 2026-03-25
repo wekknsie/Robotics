@@ -34,11 +34,11 @@ class LidarNode : public rclcpp::Node
             LidarFilterResults data;
             data = apply_filter(msg->ranges, msg->angle_min, msg->angle_max);
 
-            state_->lidarLeft = (double)data.left;
-            state_->lidarRight = (double)data.right;
+            state_->lidarLeft = (double)data.right;
+            state_->lidarRight = (double)data.left;
             state_->lidarFront = (double)data.back;
 
-            //RCLCPP_INFO(this->get_logger(), "Data from lidar: \n front:'%f',back:'%f',left:'%f',right:'%f'",data.front,data.back,data.left,data.right);
+            RCLCPP_INFO(this->get_logger(), "Data from lidar: \n front:'%f',back:'%f',left:'%f',right:'%f'",data.front,data.back,data.right,data.left);
       
         }
 
