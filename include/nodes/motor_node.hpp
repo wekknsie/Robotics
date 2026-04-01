@@ -147,45 +147,93 @@ private:
       speedRightWheel = 140;
     }
   }
-
+ 
   void corridorNavigation(){
-    switch(corridorState){
-      case CALIBRATION:
-        // TODO make calibration to gain data from IMU
-        integral_ = 0.0;
-        corridorState = CORRIDOR_NAVIGATION;
-        break;
-      case CORRIDOR_NAVIGATION:{
-        double front = state_->lidarFront;
-        double left = state_->lidarLeft;
-        double right = state_->lidarRight;
+    double front = state_->lidarFront;
+    double left = state_->lidarLeft;
+    double right = state_->lidarRight;
 
+    switch(corridorState){
+      case CALIBRATION:{
+        /*rclcpp::Time now = this->now();
+
+        if(first){
+          start_time = now;
+          last_time = now;
+          first = false;
+          return;
+        }
+
+        double dt = (now - last_time).seconds();
+        last_time = now;  
+
+        double elapsed = (now - start_time).seconds();
+        if(elapsed > 3.5){
+          integral_ = 0.0;
+          corridorState = CORRIDOR_NAVIGATION;
+        }
+        break;*/
+        corridorState = CORRIDOR_NAVIGATION;
+      }
+      case CORRIDOR_NAVIGATION:{
         RCLCPP_INFO(this->get_logger(), "Lidar Front: %.4f, Left: %.4f, Right: %.4f", front, left, right);
 
-        const double frontStop = 0.2;
+        const double frontStop = 0.3;
         const double frontSlow = 0.3;
 
         if(front < frontStop){ // NEED TO TURN, stop and change state to TURNING
           integral_ = 0.0;
           speedLeftWheel = 127;
           speedRightWheel = 127;
+          startYaw = state_->imuAngle;
           corridorState = TURNING;
           break;
         }
         
-        int baseSpeedCorridor = 140;
+        int baseSpeedCorridor = 135;
         if(front < frontSlow){
-          baseSpeedCorridor = 135; // TODO tune this value after testing
+          baseSpeedCorridor = 132; // TODO tune this value after testing
         }
              
 
         double error = right - left;
+        if(right > 0.35 || left > 0.35){
+          error = 0.0;
+        }
+        RCLCPP_INFO(this->get_logger(), "Corridor Error: %.4f Right %.4f Left %.4f", right-left, right, left);
         regulatorPID_lidar(error, baseSpeedCorridor);
         
         break;
       }
-      case TURNING:
-        RCLCPP_INFO(this->get_logger(), "TURNING");
+      case TURNING:{ // TODO: create turning function
+        
+        double yaw = state_->imuAngle;
+        double pi=3.14;
+
+        double direction = right - left;
+        
+        if(std::abs(yaw - startYaw) > pi/2){
+          corridorState = END;
+          speedLeftWheel = 127;
+          speedRightWheel = 127;
+          break;
+        }
+
+        corridorTurning(direction);
+        RCLCPP_INFO(this->get_logger(), "END");
+        break;
+      }
+      case END:
+        if(counter++ > 100){
+          speedLeftWheel = 127;
+          speedRightWheel = 127;
+          counter = 0;
+          corridorState = CORRIDOR_NAVIGATION;
+        }
+
+        speedLeftWheel = 134;
+        speedRightWheel = 134;
+        RCLCPP_INFO(this->get_logger(), "KONEC %d", counter);
         break;
     }
   }
@@ -200,23 +248,21 @@ private:
     if (dt <= 0.0) dt = 0.01;
     if (dt > 0.05) dt = 0.05;
     
-    //double dt = 0.01;
-
-    double kp = 2.0;
-    double kd = 0.08;
+    double kp = 4.0;
+    double kd = 0.5;
     double ki = 0.0;
     
-    if (std::abs(error) < 0.05) {
+    if (std::abs(error) < 0.008) {
         error = 0.0;
     }
 
     integral_ += error * dt;
-    integral_ = std::clamp(integral_, -10.0, 10.0);
+    //integral_ = std::clamp(integral_, -10.0, 10.0);
 
     double derivative = (error - prev_error_) / dt;
-    derivative = std::clamp(derivative, -1.0, 1.0);
+    //derivative = std::clamp(derivative, -1.0, 1.0);
 
-    double correction = 5 * (kp * error + ki * integral_ + kd * derivative);
+    double correction = 1.5 * kp * error; //+ ki * integral_ + kd * derivative);
     
     int left = static_cast<int>(baseSpeed - correction);
     int right = static_cast<int>(baseSpeed + correction);
@@ -227,9 +273,25 @@ private:
     speedLeftWheel = static_cast<uint8_t>(left);
     speedRightWheel = static_cast<uint8_t>(right);
 
-    RCLCPP_INFO(this->get_logger(), "Lidar Error: %.4f, Correction: %.4f, Left: %d, Right: %d", error, correction, left, right);
+    if(left > right){
+      RCLCPP_INFO(this->get_logger(), "Turning RIGHT, Lidar Error: %.4f, Correction: %.4f, Left: %d, Right: %d\n", error, correction, left, right);
+    } else if(right > left){
+      RCLCPP_INFO(this->get_logger(), "Turning LEFT, Lidar Error: %.4f, Correction: %.4f, Left: %d, Right: %d\n", error, correction, left, right);
+    } else {
+      RCLCPP_INFO(this->get_logger(), "Moving STRAIGHT, Lidar Error: %.4f, Correction: %.4f, Left: %d, Right: %d\n", error, correction, left, right);
+    }
 
     prev_error_ = error;
+  }
+
+  void corridorTurning(double side){
+    if(side > 0){ // turn left
+      speedLeftWheel = 127;
+      speedRightWheel = 132;
+    } else { // turn right
+      speedLeftWheel = 132;
+      speedRightWheel = 127;
+    }
   }
 
   void regulatorPID_line(const double error){
@@ -242,7 +304,7 @@ private:
     //double kd = 0.01;
     
     // FINAL VALUES
-    double dt = 0.05;
+    double dt = 0.01;
     double k = 5.0;
     double ki = 0.0;
     double kd = 0.02;
@@ -266,8 +328,8 @@ private:
     int left = static_cast<int>(baseSpeed + correction);
     int right = static_cast<int>(baseSpeed - correction);
 
-    left = std::clamp(left, 127, 150);
-    right = std::clamp(right, 127, 150);
+    left = std::clamp(left, 127, 140);
+    right = std::clamp(right, 127, 140);
 
     RCLCPP_INFO(this->get_logger(), "Error: %.4f, Correction: %.4f, Left: %d, Right: %d", error, correction, left, right);
 
@@ -302,7 +364,8 @@ private:
   enum corridor_state {
     CALIBRATION = 0,
     CORRIDOR_NAVIGATION = 1,
-    TURNING = 2
+    TURNING = 2,
+    END = 3
   };
 
   corridor_state corridorState = CALIBRATION;
@@ -320,15 +383,22 @@ private:
   double leftWheelDistance = 0.0;
   double rightWheelDistance = 0.0;
 
-  uint8_t speedLeftWheel = 140;
-  uint8_t speedRightWheel = 140;
+  uint8_t speedLeftWheel = 127;
+  uint8_t speedRightWheel = 127;
 
   double x = 0;
   double y = 0;
   double theta = 0.0;
 
+  double startYaw = 0.0;
+  bool first = true;
+  rclcpp::Time last_time;
+  rclcpp::Time start_time;
+  int counter = 0;
+
   bool havePrevious = false;
   rclcpp::TimerBase::SharedPtr timer_;
+  
   size_t count_;
   std::shared_ptr<SharedState> state_;
   rclcpp::Publisher<std_msgs::msg::UInt8MultiArray>::SharedPtr publisher_;

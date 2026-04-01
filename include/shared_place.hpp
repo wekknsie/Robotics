@@ -14,4 +14,7 @@ struct SharedState {
   std::atomic<double> lidarLeft{0.0};
   std::atomic<double> lidarRight{0.0};
   std::atomic<double> lidarFront{0.0};
+
+  // IMU sensor
+  std::atomic<double> imuAngle{0.0};
 };
