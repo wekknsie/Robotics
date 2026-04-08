@@ -220,11 +220,11 @@ private:
         }
 
         corridorTurning(direction);
-        RCLCPP_INFO(this->get_logger(), "END");
+        RCLCPP_INFO(this->get_logger(), "TURNING, Yaw: %.4f, Start Yaw: %.4f, Direction: %.4f", yaw, startYaw, direction);
         break;
       }
       case END:
-        if(counter++ > 100){
+        if(counter++ > 75){
           speedLeftWheel = 127;
           speedRightWheel = 127;
           counter = 0;
@@ -233,7 +233,7 @@ private:
 
         speedLeftWheel = 134;
         speedRightWheel = 134;
-        RCLCPP_INFO(this->get_logger(), "KONEC %d", counter);
+        RCLCPP_INFO(this->get_logger(), "POPOJIZDIM - %d", counter);
         break;
     }
   }
@@ -262,7 +262,7 @@ private:
     double derivative = (error - prev_error_) / dt;
     //derivative = std::clamp(derivative, -1.0, 1.0);
 
-    double correction = 1.5 * kp * error; //+ ki * integral_ + kd * derivative);
+    double correction = 1.5 * (kp * error + kd * derivative + ki * integral_); //+ ki * integral_
     
     int left = static_cast<int>(baseSpeed - correction);
     int right = static_cast<int>(baseSpeed + correction);
