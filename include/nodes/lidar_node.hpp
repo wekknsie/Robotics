@@ -83,11 +83,23 @@ class LidarNode : public rclcpp::Node
             float sumRight = std::accumulate(right.begin(), right.end(), 0.0);
 
             return LidarFilterResults{
-                .front = sumFront / front.size(),
-                .back = sumBack / back.size(),
-                .left = sumLeft / left.size(),
-                .right = sumRight / right.size(),
+                .front = median(front),
+                .back  = median(back),
+                .left  = median(left),
+                .right = median(right),
             };
+        }
+
+        float median(std::vector<float> values) {
+            if (values.empty()) return std::numeric_limits<float>::infinity();
+
+            std::sort(values.begin(), values.end());
+            size_t n = values.size();
+
+            if (n % 2 == 0) {
+                return (values[n / 2 - 1] + values[n / 2]) / 2.0f;
+            }
+            return values[n / 2];
         }
         
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr subscription_;

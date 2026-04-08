@@ -190,7 +190,7 @@ private:
           break;
         }
         
-        int baseSpeedCorridor = 135;
+        int baseSpeedCorridor = 140;
         if(front < frontSlow){
           baseSpeedCorridor = 132; // TODO tune this value after testing
         }
@@ -208,11 +208,9 @@ private:
       case TURNING:{ // TODO: create turning function
         
         double yaw = state_->imuAngle;
-        double pi=3.14;
-
         double direction = right - left;
         
-        if(std::abs(yaw - startYaw) > pi/2){
+        if(std::abs(yaw - startYaw) > M_PI/2){
           corridorState = END;
           speedLeftWheel = 127;
           speedRightWheel = 127;
@@ -248,8 +246,8 @@ private:
     if (dt <= 0.0) dt = 0.01;
     if (dt > 0.05) dt = 0.05;
     
-    double kp = 4.0;
-    double kd = 0.5;
+    double kp = 5.0;
+    double kd = 0.4;
     double ki = 0.0;
     
     if (std::abs(error) < 0.008) {
@@ -262,7 +260,7 @@ private:
     double derivative = (error - prev_error_) / dt;
     //derivative = std::clamp(derivative, -1.0, 1.0);
 
-    double correction = 1.5 * (kp * error + kd * derivative + ki * integral_); //+ ki * integral_
+    double correction = 1.5 * (kp * error + kd * derivative + ki * integral_);
     
     int left = static_cast<int>(baseSpeed - correction);
     int right = static_cast<int>(baseSpeed + correction);
@@ -287,9 +285,9 @@ private:
   void corridorTurning(double side){
     if(side > 0){ // turn left
       speedLeftWheel = 127;
-      speedRightWheel = 132;
+      speedRightWheel = 133;
     } else { // turn right
-      speedLeftWheel = 132;
+      speedLeftWheel = 133;
       speedRightWheel = 127;
     }
   }

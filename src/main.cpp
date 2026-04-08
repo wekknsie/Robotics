@@ -7,6 +7,8 @@
 #include "./nodes/line_node.hpp"
 #include "./nodes/lidar_node.hpp"
 #include "./nodes/imu_node.hpp"
+#include "./nodes/camera_node.hpp"
+
 #include "shared_place.hpp"
 
 int main(int argc, char* argv[]) {
@@ -25,6 +27,7 @@ int main(int argc, char* argv[]) {
     auto lineNode = std::make_shared<LineNode>(state);
     auto lidarNode = std::make_shared<LidarNode>(state);
     auto imuNode = std::make_shared<ImuNode>(state);
+    auto cameraNode = std::make_shared<CameraNode>(state);
 
     // Add nodes to the executor
     executor->add_node(buttonNode);
@@ -33,7 +36,7 @@ int main(int argc, char* argv[]) {
     executor->add_node(lineNode);
     executor->add_node(lidarNode);
     executor->add_node(imuNode);
-
+    executor->add_node(cameraNode);
     // Run the executor (handles callbacks for both nodes)
     executor->spin();
 
