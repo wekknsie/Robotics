@@ -36,9 +36,7 @@ class LidarNode : public rclcpp::Node
 
             state_->lidarLeft = (double)data.left;
             state_->lidarRight = (double)data.right;
-            state_->lidarFront = (double)data.back;
-
-            //RCLCPP_INFO(this->get_logger(), "Data from lidar: \n front:'%f',back:'%f',left:'%f',right:'%f'",data.front,data.back,data.right,data.left);
+            state_->lidarFront = (double)data.front;
       
         }
 
@@ -49,38 +47,34 @@ class LidarNode : public rclcpp::Node
             std::vector<float> front{};
             std::vector<float> back{};
 
-            // TODO: Define how wide each directional sector should be (in radians)
+            // Define how wide each directional sector should be (in radians)
             constexpr float angle_range = M_PI / 4.0f;
 
             // Compute the angular step between each range reading
-            auto angle_step = (angle_end - angle_start) / points.size();
+            auto angle_step = (angle_end - angle_start) / static_cast<float>(points.size() - 1);
 
             for (size_t i = 0; i < points.size(); ++i) {
-                auto angle = angle_start + i * angle_step;
+                float angle = angle_start + static_cast<float>(i) * angle_step;
 
-                // TODO: Skip invalid (infinite) readings
+                // Skiping invalid (infinite) readings
                 if(std::isinf(points[i]) || std::isnan(points[i])) {
                     continue;
                 }
 
-                // TODO: Sort the value into the correct directional bin based on angle
-                if(angle >= -angle_range && angle <= angle_range) {
+                // Sort the value into the correct directional bin based on angle
+                if(angle >= deg2rad(165.0f) || angle <= deg2rad(-165.0f)) {
                     front.push_back(points[i]);
-                } else if(angle > angle_range && angle <= M_PI - angle_range) {
-                    left.push_back(points[i]);
-                } else if(angle < -angle_range && angle >= -M_PI + angle_range) {
+                } else if(angle >= deg2rad(75.0f) && angle <= deg2rad(105.0f)) {
                     right.push_back(points[i]);
+                } else if(angle >= deg2rad(-105.f) && angle <= deg2rad(-75.0f)) {
+                    left.push_back(points[i]);
                 } else {
                     back.push_back(points[i]);
                 }
                 
             }
 
-            // TODO: Return the average of each sector (basic mean filter)
-            float sumFront = std::accumulate(front.begin(), front.end(), 0.0);
-            float sumBack = std::accumulate(back.begin(), back.end(), 0.0);            
-            float sumLeft = std::accumulate(left.begin(), left.end(), 0.0);
-            float sumRight = std::accumulate(right.begin(), right.end(), 0.0);
+            //RCLCPP_INFO(this->get_logger(), "LIDAR filter results: \n front:'%f',back:'%f',left:'%f',right:'%f'",median(front),median(back),median(left),median(right));
 
             return LidarFilterResults{
                 .front = median(front),
@@ -100,6 +94,10 @@ class LidarNode : public rclcpp::Node
                 return (values[n / 2 - 1] + values[n / 2]) / 2.0f;
             }
             return values[n / 2];
+        }
+
+        float deg2rad(float degrees) {
+            return degrees * M_PI / 180.0f;
         }
         
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr subscription_;

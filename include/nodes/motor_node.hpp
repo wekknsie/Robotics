@@ -176,16 +176,35 @@ private:
         corridorState = CORRIDOR_NAVIGATION;
       }
       case CORRIDOR_NAVIGATION:{
-        RCLCPP_INFO(this->get_logger(), "Lidar Front: %.4f, Left: %.4f, Right: %.4f", front, left, right);
+        //RCLCPP_INFO(this->get_logger(), "Lidar Front: %.4f, Left: %.4f, Right: %.4f", front, left, right);
 
         const double frontStop = 0.3;
         const double frontSlow = 0.3;
 
+        RCLCPP_INFO(this->get_logger(), "FRONT: %.4f", front);
+        
+        // if(front > 0.5 && (right > 0.5 || left > 0.5)){
+        //   // INTERSECTION TYPE 1
+        //   // |     |
+        //   // |-   -|
+        //   // |     |
+        //   RCLCPP_INFO(this->get_logger(), "Intersection type 1 detected");
+        // }else if(front < 0.4 && right > 0.5 && left > 0.5){
+        //   // INTERSECTION TYPE 2
+        //   // --------
+        //   //    |
+        //   RCLCPP_INFO(this->get_logger(), "Intersection type 2 detected");
+        // }
+
         if(front < frontStop){ // NEED TO TURN, stop and change state to TURNING
+          RCLCPP_INFO(this->get_logger(), "Obstacle detected in front, stopping and preparing to turn");
+          RCLCPP_INFO(this->get_logger(), "Front: %.4f, Left: %.4f, Right: %.4f", front, left, right);
           integral_ = 0.0;
           speedLeftWheel = 127;
           speedRightWheel = 127;
           startYaw = state_->imuAngle;
+          direction = left - right;
+
           corridorState = TURNING;
           break;
         }
@@ -197,9 +216,14 @@ private:
              
 
         double error = right - left;
+        if(abs(error) <= 0.02)
+            error=0;
+        // if(abs(error) >= 0.1)
+        //     error *= 2;    
         if(right > 0.35 || left > 0.35){
           error = 0.0;
         }
+        
         RCLCPP_INFO(this->get_logger(), "Corridor Error: %.4f Right %.4f Left %.4f", right-left, right, left);
         regulatorPID_lidar(error, baseSpeedCorridor);
         
@@ -208,17 +232,18 @@ private:
       case TURNING:{ // TODO: create turning function
         
         double yaw = state_->imuAngle;
-        double direction = right - left;
-        
-        if(std::abs(yaw - startYaw) > M_PI/2){
+        //direction = left - right;
+
+        if(std::abs(yaw - startYaw) >= M_PI/2){
           corridorState = END;
           speedLeftWheel = 127;
           speedRightWheel = 127;
+          //direction = 0;
           break;
         }
 
         corridorTurning(direction);
-        RCLCPP_INFO(this->get_logger(), "TURNING, Yaw: %.4f, Start Yaw: %.4f, Direction: %.4f", yaw, startYaw, direction);
+        RCLCPP_INFO(this->get_logger(), "TURNING, Yaw: %.4f, Start Yaw: %.4f, goal yaw %.4f Direction: %.4f", yaw, startYaw, std::abs(yaw-startYaw), direction);
         break;
       }
       case END:
@@ -233,6 +258,11 @@ private:
         speedRightWheel = 134;
         RCLCPP_INFO(this->get_logger(), "POPOJIZDIM - %d", counter);
         break;
+      case STOP:{
+        speedLeftWheel = 127;
+        speedRightWheel = 127;
+        break;
+      }
     }
   }
 
@@ -246,8 +276,8 @@ private:
     if (dt <= 0.0) dt = 0.01;
     if (dt > 0.05) dt = 0.05;
     
-    double kp = 5.0;
-    double kd = 0.4;
+    double kp = 4.0;
+    double kd = 1.2;
     double ki = 0.0;
     
     if (std::abs(error) < 0.008) {
@@ -258,12 +288,14 @@ private:
     //integral_ = std::clamp(integral_, -10.0, 10.0);
 
     double derivative = (error - prev_error_) / dt;
-    //derivative = std::clamp(derivative, -1.0, 1.0);
+    //derivative = std::clamp(derivative, -2.0, 2.0);
 
-    double correction = 1.5 * (kp * error + kd * derivative + ki * integral_);
+    double correction = 1 * (kp * error + kd * derivative + ki * integral_);
     
-    int left = static_cast<int>(baseSpeed - correction);
-    int right = static_cast<int>(baseSpeed + correction);
+    int left = static_cast<int>(baseSpeed + correction);
+    int right = static_cast<int>(baseSpeed - correction);
+    // int left = static_cast<int>(std::round(baseSpeed + correction));
+    // int right = static_cast<int>(std::round(baseSpeed - correction));
 
     left = std::clamp(left, 127, 155);
     right = std::clamp(right, 127, 155);
@@ -363,7 +395,8 @@ private:
     CALIBRATION = 0,
     CORRIDOR_NAVIGATION = 1,
     TURNING = 2,
-    END = 3
+    END = 3,
+    STOP = 4
   };
 
   corridor_state corridorState = CALIBRATION;
@@ -380,6 +413,7 @@ private:
 
   double leftWheelDistance = 0.0;
   double rightWheelDistance = 0.0;
+  double direction = 0;
 
   uint8_t speedLeftWheel = 127;
   uint8_t speedRightWheel = 127;
