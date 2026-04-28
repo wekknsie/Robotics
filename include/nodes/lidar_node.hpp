@@ -1,5 +1,7 @@
 #pragma once
 #include <cmath>
+#include <algorithm>
+#include <limits>
 #include <vector>
 #include <numeric>
 #include <memory>
@@ -31,56 +33,65 @@ class LidarNode : public rclcpp::Node
         };
         
         void topic_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
-            LidarFilterResults data;
-            data = apply_filter(msg->ranges, msg->angle_min, msg->angle_max);
+            LidarFilterResults data = apply_filter(*msg);
 
-            state_->lidarLeft = (double)data.left;
-            state_->lidarRight = (double)data.right;
-            state_->lidarFront = (double)data.front;
+            state_->lidarLeft.store((double)data.left);
+            state_->lidarRight.store((double)data.right);
+            state_->lidarFront.store((double)data.front);
+
+            //RCLCPP_INFO(this->get_logger(), "Data from lidar: \n front:'%f',back:'%f',left:'%f',right:'%f'",data.front,data.back,data.right,data.left);
       
         }
 
-        LidarFilterResults apply_filter(std::vector<float> points, float angle_start, float angle_end) {
+        LidarFilterResults apply_filter(const sensor_msgs::msg::LaserScan& scan) {
             // Create containers for values in different directions
             std::vector<float> left{};
             std::vector<float> right{};
             std::vector<float> front{};
             std::vector<float> back{};
+            const auto& points = scan.ranges;
 
-            // Define how wide each directional sector should be (in radians)
-            constexpr float angle_range = M_PI / 4.0f;
+            if (points.empty()) {
+                const float inf = std::numeric_limits<float>::infinity();
+                return LidarFilterResults{inf, inf, inf, inf};
+            }
+
+            constexpr float front_window = M_PI / 9.0f;
+            constexpr float side_window = M_PI / 10.0f;
+            constexpr float lidar_to_robot_yaw = M_PI;
 
             // Compute the angular step between each range reading
-            auto angle_step = (angle_end - angle_start) / static_cast<float>(points.size() - 1);
+            const float angle_step = scan.angle_increment != 0.0f
+                ? scan.angle_increment
+                : (points.size() > 1 ? (scan.angle_max - scan.angle_min) / (points.size() - 1) : 0.0f);
 
             for (size_t i = 0; i < points.size(); ++i) {
-                float angle = angle_start + static_cast<float>(i) * angle_step;
-
-                // Skiping invalid (infinite) readings
-                if(std::isinf(points[i]) || std::isnan(points[i])) {
+                auto angle = normalizeAngle(scan.angle_min + i * angle_step + lidar_to_robot_yaw);
+                // const float range = points[i];
+                 float range = normalizeRange(points[i], scan.range_min, scan.range_max);
+                // TODO: Skip invalid (infinite) readings
+                if(!std::isfinite(range)) {
                     continue;
                 }
 
-                // Sort the value into the correct directional bin based on angle
-                if(angle >= deg2rad(165.0f) || angle <= deg2rad(-165.0f)) {
-                    front.push_back(points[i]);
-                } else if(angle >= deg2rad(75.0f) && angle <= deg2rad(105.0f)) {
-                    right.push_back(points[i]);
-                } else if(angle >= deg2rad(-105.f) && angle <= deg2rad(-75.0f)) {
-                    left.push_back(points[i]);
-                } else {
-                    back.push_back(points[i]);
+                if(std::abs(angle) <= front_window) {
+                    front.push_back(range);
+                } else if(std::abs(angle - M_PI / 2.0f) <= side_window) {
+                    left.push_back(range);
+                } else if(std::abs(angle + M_PI / 2.0f) <= side_window) {
+                    right.push_back(range);
+                } else if(std::abs(std::abs(angle) - M_PI) <= front_window) {
+                    back.push_back(range);
                 }
                 
             }
 
-            //RCLCPP_INFO(this->get_logger(), "LIDAR filter results: \n front:'%f',back:'%f',left:'%f',right:'%f'",median(front),median(back),median(left),median(right));
-
+            // TODO: Return the average of each sector (basic mean filter)
             return LidarFilterResults{
-                .front = median(front),
-                .back  = median(back),
-                .left  = median(left),
-                .right = median(right),
+                median(front),
+                median(back),
+                median(left),
+                median(right),
             };
         }
 
@@ -95,9 +106,34 @@ class LidarNode : public rclcpp::Node
             }
             return values[n / 2];
         }
+   float normalizeRange(float range, float range_min, float range_max) {
+            if (std::isnan(range)) {
+                return std::numeric_limits<float>::infinity();
+            }
 
-        float deg2rad(float degrees) {
-            return degrees * M_PI / 180.0f;
+            if (std::isinf(range)) {
+                return range < 0.0f ? range_min : std::numeric_limits<float>::infinity();
+            }
+
+            if (range < range_min) {
+                return range_min;
+            }
+
+            if (range > range_max) {
+                return std::numeric_limits<float>::infinity();
+            }
+
+            return range;
+        }
+
+        float normalizeAngle(float angle) {
+            while (angle > M_PI) {
+                angle -= 2.0f * M_PI;
+            }
+            while (angle < -M_PI) {
+                angle += 2.0f * M_PI;
+            }
+            return angle;
         }
         
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr subscription_;

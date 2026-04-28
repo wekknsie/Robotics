@@ -46,15 +46,19 @@ class ImuNode : public rclcpp::Node
                     for (float s : samples) sum += s;
 
                     offset = sum / samples.size();
+                    yaw = 0.0f;
+                    last_time = now;
+                    state_->imuAngle.store(0.0);
+                    state_->imuReady.store(true);
                     RCLCPP_INFO(this->get_logger(), "IMU Calibrated with offset: %f", offset);
                     calibrated = true;
                 }
                 return;
             }
             yaw += (gyro_z - offset) * dt;
-            state_->imuAngle = yaw;
+            state_->imuAngle.store(yaw);
 
-           // RCLCPP_INFO(this->get_logger(), "Yaw: %f", yaw);
+            //RCLCPP_INFO(this->get_logger(), "Yaw: %f", yaw);
         }
 
         float yaw = 0.0;

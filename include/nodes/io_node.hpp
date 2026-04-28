@@ -31,10 +31,10 @@ class ButtonNode : public rclcpp::Node
     
     void topic_callback(const std_msgs::msg::UInt8::SharedPtr msg)
     {
-      RCLCPP_INFO(this->get_logger(), "Last button state: '%u'", button_pressed_);
+      RCLCPP_INFO(this->get_logger(), "Last button state: '%d'", button_pressed_);
       RCLCPP_INFO(this->get_logger(), "I heard: '%u'", msg->data);
       button_pressed_ = msg->data;
-      state_->last_button = button_pressed_;
+      state_->last_button.store(button_pressed_);
     }
     rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr subscription_;
     std::shared_ptr<SharedState> state_;
