@@ -200,7 +200,9 @@ private:
         double rightForControl = cappedDistance(right, sideMaxDistance);
         double error = leftForControl - rightForControl;
         if(leftForControl > 0.35 || rightForControl > 0.35){
-          error = 0.0;
+            if(!(leftForControl > 0.80 && rightForControl > 0.80)){
+              error = 0.0;
+            } 
         }
         
         RCLCPP_INFO(this->get_logger(), "Corridor Error: %.4f Left %.4f Right %.4f", error, left, right);
@@ -213,10 +215,18 @@ private:
         double yaw = state_->imuAngle.load();
         double turnAngle = std::abs(normalizeAngle(yaw - startYaw));
         
-        if(turnAngle >= M_PI/2 - 0.15){
-          corridorState = END;
-          stopMotors();
-          break;
+        double targetAngle = M_PI / 2.0;
+
+        if (turnDirection_ == -1) {
+            targetAngle += 0.025;
+        } else if (turnDirection_ == 1) {
+            targetAngle -= 0.025;
+        }
+
+        if (turnAngle >= targetAngle) {
+            corridorState = END;
+            stopMotors();
+            break;
         }
 
         corridorTurning(turnDirection_);
