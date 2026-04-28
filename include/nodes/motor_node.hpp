@@ -6,6 +6,8 @@
 #include <vector>
 #include <chrono>
 #include <cmath>
+#include <algorithm>
+#include <atomic>
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/u_int8_multi_array.hpp"
@@ -50,7 +52,7 @@ private:
   {
     auto message = std_msgs::msg::UInt8MultiArray();
     
-    message.data = {speedLeftWheel, speedRightWheel};
+    message.data = {speedLeftWheel.load(), speedRightWheel.load()};
 
     publisher_->publish(message);
   }
@@ -68,8 +70,16 @@ private:
 
     int button_state = state_->last_button.load();
     if(button_state == 0){
-      speedLeftWheel = 127;
-      speedRightWheel = 127;
+      stopMotors();
+      resetPid();
+      corridorState = CALIBRATION;
+      havePrevious = false;
+      counter = 0;
+      return;
+    }
+
+    if(!state_->imuReady.load()){
+      stopMotors();
       return;
     }
 
@@ -115,7 +125,7 @@ private:
     
     //handleStraightMovement(theta);
     if(button_state == 2){
-      regulatorPID_line(state_->left_sensor - state_->right_sensor);
+      regulatorPID_line(state_->left_sensor.load() - state_->right_sensor.load());
     } else if(button_state == 1){
       corridorNavigation();
     }
@@ -137,55 +147,39 @@ private:
    */
   void handleStraightMovement(const double theta){
     if(std::abs(theta) < 0.1){
-      speedLeftWheel = 140;
-      speedRightWheel = 140;
+      setMotorSpeeds(140, 140);
     } else if(theta > 0){
-      speedLeftWheel = 140;
-      speedRightWheel = 130;
+      setMotorSpeeds(140, 130);
     } else {
-      speedLeftWheel = 130;
-      speedRightWheel = 140;
+      setMotorSpeeds(130, 140);
     }
   }
  
   void corridorNavigation(){
-    double front = state_->lidarFront;
-    double left = state_->lidarLeft;
-    double right = state_->lidarRight;
+    double front = state_->lidarFront.load();
+    double left = state_->lidarLeft.load();
+    double right = state_->lidarRight.load();
 
     switch(corridorState){
       case CALIBRATION:{
-        /*rclcpp::Time now = this->now();
-
-        if(first){
-          start_time = now;
-          last_time = now;
-          first = false;
-          return;
-        }
-
-        double dt = (now - last_time).seconds();
-        last_time = now;  
-
-        double elapsed = (now - start_time).seconds();
-        if(elapsed > 3.5){
-          integral_ = 0.0;
-          corridorState = CORRIDOR_NAVIGATION;
-        }
-        break;*/
+        resetPid();
+        stopMotors();
+        counter = 0;
         corridorState = CORRIDOR_NAVIGATION;
+        break;
       }
       case CORRIDOR_NAVIGATION:{
         RCLCPP_INFO(this->get_logger(), "Lidar Front: %.4f, Left: %.4f, Right: %.4f", front, left, right);
 
         const double frontStop = 0.3;
-        const double frontSlow = 0.3;
+        const double frontSlow = 0.55;
 
         if(front < frontStop){ // NEED TO TURN, stop and change state to TURNING
-          integral_ = 0.0;
-          speedLeftWheel = 127;
-          speedRightWheel = 127;
-          startYaw = state_->imuAngle;
+          resetPid();
+          stopMotors();
+          startYaw = state_->imuAngle.load();
+          turnDirection_ = chooseTurnDirection(left, right);
+          counter = 0;
           corridorState = TURNING;
           break;
         }
@@ -196,41 +190,39 @@ private:
         }
              
 
-        double error = right - left;
-        if(right > 0.35 || left > 0.35){
-          error = 0.0;
-        }
-        RCLCPP_INFO(this->get_logger(), "Corridor Error: %.4f Right %.4f Left %.4f", right-left, right, left);
+        constexpr double sideMaxDistance = 0.45;
+        double leftForControl = cappedDistance(left, sideMaxDistance);
+        double rightForControl = cappedDistance(right, sideMaxDistance);
+        double error = leftForControl - rightForControl;
+
+        RCLCPP_INFO(this->get_logger(), "Corridor Error: %.4f Left %.4f Right %.4f", error, left, right);
         regulatorPID_lidar(error, baseSpeedCorridor);
         
         break;
       }
       case TURNING:{ // TODO: create turning function
         
-        double yaw = state_->imuAngle;
-        double direction = right - left;
+        double yaw = state_->imuAngle.load();
+        double turnAngle = std::abs(normalizeAngle(yaw - startYaw));
         
-        if(std::abs(yaw - startYaw) > M_PI/2){
+        if(turnAngle >= M_PI/2){
           corridorState = END;
-          speedLeftWheel = 127;
-          speedRightWheel = 127;
+          stopMotors();
           break;
         }
 
-        corridorTurning(direction);
-        RCLCPP_INFO(this->get_logger(), "TURNING, Yaw: %.4f, Start Yaw: %.4f, Direction: %.4f", yaw, startYaw, direction);
+        corridorTurning(turnDirection_);
+        RCLCPP_INFO(this->get_logger(), "TURNING, Yaw: %.4f, Start Yaw: %.4f, Turn angle: %.4f, Direction: %d", yaw, startYaw, turnAngle, turnDirection_);
         break;
       }
       case END:
-        if(counter++ > 75){
-          speedLeftWheel = 127;
-          speedRightWheel = 127;
+        setMotorSpeeds(134, 134);
+        if(++counter > 75){
           counter = 0;
+          resetPid();
           corridorState = CORRIDOR_NAVIGATION;
         }
 
-        speedLeftWheel = 134;
-        speedRightWheel = 134;
         RCLCPP_INFO(this->get_logger(), "POPOJIZDIM - %d", counter);
         break;
     }
@@ -246,8 +238,8 @@ private:
     if (dt <= 0.0) dt = 0.01;
     if (dt > 0.05) dt = 0.05;
     
-    double kp = 5.0;
-    double kd = 0.4;
+    double kp = 35.0;
+    double kd = 1.0;
     double ki = 0.0;
     
     if (std::abs(error) < 0.008) {
@@ -255,10 +247,10 @@ private:
     }
 
     integral_ += error * dt;
-    //integral_ = std::clamp(integral_, -10.0, 10.0);
+    integral_ = std::clamp(integral_, -0.5, 0.5);
 
     double derivative = (error - prev_error_) / dt;
-    //derivative = std::clamp(derivative, -1.0, 1.0);
+    derivative = std::clamp(derivative, -1.0, 1.0);
 
     double correction = 1.5 * (kp * error + kd * derivative + ki * integral_);
     
@@ -268,8 +260,7 @@ private:
     left = std::clamp(left, 127, 155);
     right = std::clamp(right, 127, 155);
 
-    speedLeftWheel = static_cast<uint8_t>(left);
-    speedRightWheel = static_cast<uint8_t>(right);
+    setMotorSpeeds(left, right);
 
     if(left > right){
       RCLCPP_INFO(this->get_logger(), "Turning RIGHT, Lidar Error: %.4f, Correction: %.4f, Left: %d, Right: %d\n", error, correction, left, right);
@@ -282,13 +273,11 @@ private:
     prev_error_ = error;
   }
 
-  void corridorTurning(double side){
-    if(side > 0){ // turn left
-      speedLeftWheel = 127;
-      speedRightWheel = 133;
+  void corridorTurning(int direction){
+    if(direction > 0){ // turn left
+      setMotorSpeeds(127, 133);
     } else { // turn right
-      speedLeftWheel = 133;
-      speedRightWheel = 127;
+      setMotorSpeeds(133, 127);
     }
   }
 
@@ -331,10 +320,71 @@ private:
 
     RCLCPP_INFO(this->get_logger(), "Error: %.4f, Correction: %.4f, Left: %d, Right: %d", error, correction, left, right);
 
-    speedLeftWheel = static_cast<uint8_t>(left);
-    speedRightWheel = static_cast<uint8_t>(right);
+    setMotorSpeeds(left, right);
 
     prev_error_ = error;
+  }
+
+  void setMotorSpeeds(int left, int right)
+  {
+    left = std::clamp(left, 0, 255);
+    right = std::clamp(right, 0, 255);
+    speedLeftWheel.store(static_cast<uint8_t>(left));
+    speedRightWheel.store(static_cast<uint8_t>(right));
+  }
+
+  void stopMotors()
+  {
+    setMotorSpeeds(127, 127);
+  }
+
+  void resetPid()
+  {
+    integral_ = 0.0;
+    prev_error_ = 0.0;
+  }
+
+  static double cappedDistance(double distance, double maxDistance)
+  {
+    if (!std::isfinite(distance)) {
+      return maxDistance;
+    }
+    return std::clamp(distance, 0.0, maxDistance);
+  }
+
+  static double clearanceForTurn(double distance)
+  {
+    if (std::isnan(distance)) {
+      return -1.0;
+    }
+    if (std::isinf(distance)) {
+      return 10.0;
+    }
+    return distance;
+  }
+
+  int chooseTurnDirection(double left, double right) const
+  {
+    constexpr double sameClearanceEpsilon = 0.05;
+    double leftClearance = clearanceForTurn(left);
+    double rightClearance = clearanceForTurn(right);
+
+    if (std::abs(leftClearance - rightClearance) < sameClearanceEpsilon) {
+      return -1; // Default to a right turn if both sides look equally open.
+    }
+
+    return leftClearance > rightClearance ? 1 : -1;
+  }
+
+  static double normalizeAngle(double angle)
+  {
+    while (angle > M_PI) {
+      angle -= 2.0 * M_PI;
+    }
+    while (angle < -M_PI) {
+      angle += 2.0 * M_PI;
+    }
+    return angle;
   }
 
 
@@ -381,14 +431,15 @@ private:
   double leftWheelDistance = 0.0;
   double rightWheelDistance = 0.0;
 
-  uint8_t speedLeftWheel = 127;
-  uint8_t speedRightWheel = 127;
+  std::atomic<uint8_t> speedLeftWheel{127};
+  std::atomic<uint8_t> speedRightWheel{127};
 
   double x = 0;
   double y = 0;
   double theta = 0.0;
 
   double startYaw = 0.0;
+  int turnDirection_ = -1;
   bool first = true;
   rclcpp::Time last_time;
   rclcpp::Time start_time;

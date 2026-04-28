@@ -1,5 +1,7 @@
 #pragma once
 #include <cmath>
+#include <algorithm>
+#include <limits>
 #include <vector>
 #include <numeric>
 #include <memory>
@@ -31,62 +33,65 @@ class LidarNode : public rclcpp::Node
         };
         
         void topic_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
-            LidarFilterResults data;
-            data = apply_filter(msg->ranges, msg->angle_min, msg->angle_max);
+            LidarFilterResults data = apply_filter(*msg);
 
-            state_->lidarLeft = (double)data.left;
-            state_->lidarRight = (double)data.right;
-            state_->lidarFront = (double)data.back;
+            state_->lidarLeft.store((double)data.left);
+            state_->lidarRight.store((double)data.right);
+            state_->lidarFront.store((double)data.front);
 
             //RCLCPP_INFO(this->get_logger(), "Data from lidar: \n front:'%f',back:'%f',left:'%f',right:'%f'",data.front,data.back,data.right,data.left);
       
         }
 
-        LidarFilterResults apply_filter(std::vector<float> points, float angle_start, float angle_end) {
+        LidarFilterResults apply_filter(const sensor_msgs::msg::LaserScan& scan) {
             // Create containers for values in different directions
             std::vector<float> left{};
             std::vector<float> right{};
             std::vector<float> front{};
             std::vector<float> back{};
+            const auto& points = scan.ranges;
+
+            if (points.empty()) {
+                const float inf = std::numeric_limits<float>::infinity();
+                return LidarFilterResults{inf, inf, inf, inf};
+            }
 
             // TODO: Define how wide each directional sector should be (in radians)
             constexpr float angle_range = M_PI / 4.0f;
 
             // Compute the angular step between each range reading
-            auto angle_step = (angle_end - angle_start) / points.size();
+            const float angle_step = scan.angle_increment != 0.0f
+                ? scan.angle_increment
+                : (points.size() > 1 ? (scan.angle_max - scan.angle_min) / (points.size() - 1) : 0.0f);
 
             for (size_t i = 0; i < points.size(); ++i) {
-                auto angle = angle_start + i * angle_step;
+                auto angle = scan.angle_min + i * angle_step;
+                const float range = points[i];
 
                 // TODO: Skip invalid (infinite) readings
-                if(std::isinf(points[i]) || std::isnan(points[i])) {
+                if(!std::isfinite(range) || range < scan.range_min || range > scan.range_max) {
                     continue;
                 }
 
                 // TODO: Sort the value into the correct directional bin based on angle
                 if(angle >= -angle_range && angle <= angle_range) {
-                    front.push_back(points[i]);
+                    front.push_back(range);
                 } else if(angle > angle_range && angle <= M_PI - angle_range) {
-                    left.push_back(points[i]);
+                    left.push_back(range);
                 } else if(angle < -angle_range && angle >= -M_PI + angle_range) {
-                    right.push_back(points[i]);
+                    right.push_back(range);
                 } else {
-                    back.push_back(points[i]);
+                    back.push_back(range);
                 }
                 
             }
 
             // TODO: Return the average of each sector (basic mean filter)
-            float sumFront = std::accumulate(front.begin(), front.end(), 0.0);
-            float sumBack = std::accumulate(back.begin(), back.end(), 0.0);            
-            float sumLeft = std::accumulate(left.begin(), left.end(), 0.0);
-            float sumRight = std::accumulate(right.begin(), right.end(), 0.0);
-
             return LidarFilterResults{
-                .front = median(front),
-                .back  = median(back),
-                .left  = median(left),
-                .right = median(right),
+                median(front),
+                median(back),
+                median(left),
+                median(right),
             };
         }
 

@@ -29,11 +29,15 @@ class LineNode : public rclcpp::Node
   private:
 		void topic_callback(const std_msgs::msg::UInt16MultiArray::SharedPtr msg)
     {
+			if (msg->data.size() < 2) {
+				return;
+			}
+
 			double left_sensor = normalize(msg->data[0]);
 			double right_sensor = normalize(msg->data[1]);
 
-			state_->left_sensor = left_sensor;
-			state_->right_sensor = right_sensor;
+			state_->left_sensor.store(left_sensor);
+			state_->right_sensor.store(right_sensor);
 
     //   double error=rror(left_sensor,right_sensor);
 

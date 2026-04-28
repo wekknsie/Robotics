@@ -1,6 +1,7 @@
 #pragma once
 #include <atomic>
 #include <cstdint>
+#include <limits>
 
 struct SharedState {
   // buttons
@@ -11,10 +12,11 @@ struct SharedState {
   std::atomic<double> right_sensor{0.0};
 
   // lidar sensors
-  std::atomic<double> lidarLeft{0.0};
-  std::atomic<double> lidarRight{0.0};
-  std::atomic<double> lidarFront{0.0};
+  std::atomic<double> lidarLeft{std::numeric_limits<double>::infinity()};
+  std::atomic<double> lidarRight{std::numeric_limits<double>::infinity()};
+  std::atomic<double> lidarFront{std::numeric_limits<double>::infinity()};
 
   // IMU sensor
   std::atomic<double> imuAngle{0.0};
+  std::atomic<bool> imuReady{false};
 };
