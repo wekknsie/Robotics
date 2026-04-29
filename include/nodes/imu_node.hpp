@@ -38,24 +38,39 @@ class ImuNode : public rclcpp::Node
             double dt = (now - last_time).seconds();
             last_time = now;
 
-            if(!calibrated){
+            if (dt <= 0.0 || dt > 0.1) {
+                return;
+            }
+
+            if (!calibrated) {
                 samples.push_back(gyro_z);
+
                 double elapsed = (now - start_time).seconds();
-                if(elapsed > 5.0){
-                    float sum = 0.0;
-                    for (float s : samples) sum += s;
+                if (elapsed > 5.0) {
+                    if (samples.empty()) {
+                        return;
+                    }
+
+                    float sum = 0.0f;
+                    for (float s : samples) {
+                        sum += s;
+                    }
 
                     offset = sum / samples.size();
                     yaw = 0.0f;
-                    last_time = now;
+
                     state_->imuAngle.store(0.0);
                     state_->imuReady.store(true);
+
                     RCLCPP_INFO(this->get_logger(), "IMU Calibrated with offset: %f", offset);
                     calibrated = true;
                 }
+
                 return;
             }
+
             yaw += (gyro_z - offset) * dt;
+            yaw = std::atan2(std::sin(yaw), std::cos(yaw));
             state_->imuAngle.store(yaw);
 
             //RCLCPP_INFO(this->get_logger(), "Yaw: %f", yaw);

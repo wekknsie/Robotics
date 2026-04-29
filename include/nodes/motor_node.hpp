@@ -24,6 +24,12 @@ constexpr float WHEEL_RADIUS = 0.033f;
 constexpr float WHEEL_CIRCUMFERENCE = 2 * M_PI * WHEEL_RADIUS;
 constexpr int32_t PULSES_PER_ROTATION = 550;
 
+
+constexpr uint8_t MOTOR_NEUTRAL = 127;
+constexpr double TURN_STEP_RAD = M_PI / 2.0;
+constexpr double MAX_YAW_ERROR_RAD = 13.0 * M_PI / 180.0;
+constexpr int TURNING_MOTOR_DELTA = 10;
+
 class MotorNode : public rclcpp::Node
 {
 public:
@@ -82,51 +88,12 @@ private:
       stopMotors();
       return;
     }
-
-    uint32_t nowL = msg->data[0]; // store both current left and right encoder readings
-    uint32_t nowR = msg->data[1];
-
-    if(!havePrevious){ // if this is the first reading, just store the current readings
-      prevLeft = nowL;
-      prevRight = nowR;
-      havePrevious = true;
-      return;
-    }
-
-    int64_t deltaLeft = calculateTicks(nowL, prevLeft); // calculate the number of ticks since the last reading for both wheels
-    int64_t deltaRight = calculateTicks(nowR, prevRight);
-    prevLeft = nowL; // set previous readings to current for the next callback
-    prevRight = nowR;
-
-    accumulatedLeft += deltaLeft; // accumulate the ticks for both wheels to track total distance traveled
-    accumulatedRight += deltaRight;
-
-    if(std::llabs(accumulatedLeft) >= PULSES_PER_ROTATION){ // when wheel did a full rotation
-      //RCLCPP_INFO(this->get_logger(), "Left wheel made a rotation, ticks error: %ld", accumulatedLeft - PULSES_PER_ROTATION);
-      accumulatedLeft = 0;
-    }
-    if(std::llabs(accumulatedRight) >= PULSES_PER_ROTATION){
-      //RCLCPP_INFO(this->get_logger(), "Right wheel made a rotation, ticks error: %ld", accumulatedRight + PULSES_PER_ROTATION);
-      accumulatedRight = 0;
-    }
-
-    double dsL = (double)deltaLeft  * (WHEEL_CIRCUMFERENCE / (double)PULSES_PER_ROTATION);
-    double dsR = std::abs((double)deltaRight * (WHEEL_CIRCUMFERENCE / (double)PULSES_PER_ROTATION));
-    leftWheelDistance += dsL;
-    rightWheelDistance += dsR;
-
-    double d0 = (dsR - dsL) / (double)WHEEL_BASE;
-    double dS = (dsR + dsL) / 2;
-   
-    x += dS * cos(theta + d0/2);
-    y += dS * sin(theta + d0/2);
-    
-    theta += d0;
     
     //handleStraightMovement(theta);
     if(button_state == 2){
       regulatorPID_line(state_->left_sensor.load() - state_->right_sensor.load());
     } else if(button_state == 1){
+      //testIMU();
       corridorNavigation();
     }
     
@@ -140,19 +107,84 @@ private:
     //RCLCPP_INFO(this->get_logger(), "Encoder[0]=%u", msg->data[0]);
   }
 
-  /**
-   * @brief Primitive function to handle straight movement
-   * 
-   * @param theta 
-   */
-  void handleStraightMovement(const double theta){
-    if(std::abs(theta) < 0.1){
-      setMotorSpeeds(140, 140);
-    } else if(theta > 0){
-      setMotorSpeeds(140, 130);
-    } else {
-      setMotorSpeeds(130, 140);
-    }
+  int stateTestIMU = 0;
+  int motorSpeedDiff = 6;
+
+  double stopEarlyAngle = 0.18; // try increase a little bit
+
+  void testIMU()
+  {
+      auto now = this->now();
+      double yaw = state_->imuAngle.load();
+
+      if (first) {
+          startYaw = yaw;
+          start_time = now;
+          first = false;
+      }
+
+      double turnAngle = std::abs(normalizeAngle(yaw - startYaw));
+
+      RCLCPP_INFO(
+          this->get_logger(),
+          "Testing IMU, Yaw: %.4f, Start Yaw: %.4f, Turn angle: %.4f, State: %d",
+          yaw, startYaw, turnAngle, stateTestIMU
+      );
+
+      constexpr double TARGET = M_PI / 2.0;
+
+      auto getTurnDiff = [&](double remaining) {
+          if (remaining > 0.70) {
+              return motorSpeedDiff;      // rychle
+          } else if (remaining > 0.35) {
+              return 4;                   // středně
+          } else {
+              return 2;                   // pomalu před cílem
+          }
+      };
+
+      if (stateTestIMU == 0) {
+          double remaining = TARGET - turnAngle;
+
+          if (remaining <= stopEarlyAngle) {
+              stopMotors();
+              start_time = now;
+              stateTestIMU = 1;
+              return;
+          }
+
+          int diff = getTurnDiff(remaining);
+          setMotorSpeeds(127 + diff, 127 - diff);
+      }
+      else if (stateTestIMU == 1) {
+          stopMotors();
+
+          if ((now - start_time).seconds() > 1.0) {
+              first = true;
+              stateTestIMU = 2;
+          }
+      }
+      else if (stateTestIMU == 2) {
+          double remaining = TARGET - turnAngle;
+
+          if (remaining <= stopEarlyAngle) {
+              stopMotors();
+              start_time = now;
+              stateTestIMU = 3;
+              return;
+          }
+
+          int diff = getTurnDiff(remaining);
+          setMotorSpeeds(127 - diff, 127 + diff);
+      }
+      else if (stateTestIMU == 3) {
+          stopMotors();
+
+          if ((now - start_time).seconds() > 1.0) {
+              first = true;
+              stateTestIMU = 0;
+          }
+      }
   }
  
   void corridorNavigation(){
@@ -171,9 +203,9 @@ private:
       case CORRIDOR_NAVIGATION:{
         RCLCPP_INFO(this->get_logger(), "Lidar Front: %.4f, Left: %.4f, Right: %.4f", front, left, right);
 
-        const double frontStop = 0.3;
-        int baseSpeedCorridor = 145;
-        const double frontSlow = 0.3;
+        const double frontStop = 0.27;
+        int baseSpeedCorridor = 140;
+        const double frontSlow = 0.1;
 
         if(std::isfinite(front) && front < frontStop){
           resetPid();
@@ -181,6 +213,7 @@ private:
 
           startYaw = state_->imuAngle.load();
           turnDirection_ = chooseTurnDirection(left, right);
+    //      targetYaw = normalizeAngle(roundToRightAngle(startYaw + turnDirection_ * TURN_STEP_RAD));
           counter = 0;
           corridorState = TURNING;
 
@@ -189,7 +222,7 @@ private:
 
         if(std::isfinite(front) && front < frontSlow){
           resetPid();
-          setMotorSpeeds(132, 132); // едет прямо медленно, без PID
+          setMotorSpeeds(132, 132); 
 
           break;
         }
@@ -200,9 +233,9 @@ private:
         double rightForControl = cappedDistance(right, sideMaxDistance);
         double error = leftForControl - rightForControl;
         if(leftForControl > 0.35 || rightForControl > 0.35){
-            if(!(leftForControl > 0.80 && rightForControl > 0.80)){
+            // if(!(leftForControl > 0.80 && rightForControl > 0.80)){
               error = 0.0;
-            } 
+            //} 
         }
         
         RCLCPP_INFO(this->get_logger(), "Corridor Error: %.4f Left %.4f Right %.4f", error, left, right);
@@ -214,26 +247,46 @@ private:
         
         double yaw = state_->imuAngle.load();
         double turnAngle = std::abs(normalizeAngle(yaw - startYaw));
+        // double yawError = angleDifference(targetYaw, yaw);
+
+        constexpr double TARGET = M_PI / 2.0;
+
+        auto getTurnDiff = [&](double remaining) {
+            if (remaining > 0.70) {
+                return motorSpeedDiff;      // rychle
+            } else if (remaining > 0.35) {
+                return 4;                   // středně
+            } else {
+                return 2;                   // pomalu před cílem
+            }
+        };
         
-        double targetAngle = M_PI / 2.0;
+        double remaining = TARGET - turnAngle;
 
-        if (turnDirection_ == -1) {
-            targetAngle += 0.025;
-        } else if (turnDirection_ == 1) {
-            targetAngle -= 0.025;
-        }
+          if (remaining <= stopEarlyAngle) {
+              stopMotors();
+              corridorState = END;
+              break;
+          }
 
-        if (turnAngle >= targetAngle) {
-            corridorState = END;
-            stopMotors();
-            break;
-        }
+        int diff = getTurnDiff(remaining);
 
-        corridorTurning(turnDirection_);
-        RCLCPP_INFO(this->get_logger(), "TURNING, Yaw: %.4f, Start Yaw: %.4f, Turn angle: %.4f, Direction: %d", yaw, startYaw, turnAngle, turnDirection_);
+        //  if(std::abs(yawError) <= MAX_YAW_ERROR_RAD){
+        //     corridorState = END;
+        //     stopMotors();
+        //     break;
+        //   }
+
+        //   corridorTurning(sign(yawError));
+        //   RCLCPP_INFO(this->get_logger(),
+        //     "TURNING, Yaw: %.4f, Target Yaw: %.4f, Error: %.4f, Direction: %d",
+        //     yaw, targetYaw, yawError, sign(yawError));
+
+        corridorTurning(turnDirection_, diff);
+        // RCLCPP_INFO(this->get_logger(), "TURNING, Yaw: %.4f, Start Yaw: %.4f, Turn angle: %.4f, Direction: %d", yaw, startYaw, turnAngle, turnDirection_);
         break;
       }
-      case END:
+      case END:{
         setMotorSpeeds(134, 134);
         if(++counter > 75){
           counter = 0;
@@ -243,6 +296,7 @@ private:
 
         RCLCPP_INFO(this->get_logger(), "POPOJIZDIM - %d", counter);
         break;
+      }
     }
   }
 
@@ -256,8 +310,8 @@ private:
     if (dt <= 0.0) dt = 0.01;
     if (dt > 0.05) dt = 0.05;
     
-    double kp = 8.0;
-    double kd = 4.0;
+    double kp = 5.0;
+    double kd = 2.0;
     double ki = 0.0;
     
     if (std::abs(error) < 0.025) {
@@ -270,7 +324,7 @@ private:
     double derivative = (error - prev_error_) / dt;
     derivative = std::clamp(derivative, -1.0, 1.0);
 
-    double correction = 1.0 * (kp * error + kd * derivative + ki * integral_);
+    double correction = 1.8 * (kp * error + kd * derivative + ki * integral_);
     
     int left = static_cast<int>(baseSpeed - correction);
     int right = static_cast<int>(baseSpeed + correction);
@@ -291,12 +345,14 @@ private:
     prev_error_ = error;
   }
 
-  void corridorTurning(int direction){
+  void corridorTurning(int direction, int diff){
     if(direction > 0){ // turn left
-      setMotorSpeeds(133, 121);
+      setMotorSpeeds(127+diff, 127-diff);
     } else { // turn right
-      setMotorSpeeds(121, 133);
+      setMotorSpeeds(127-diff, 127+diff);
     }
+
+
   }
 
   void regulatorPID_line(const double error){
@@ -405,7 +461,20 @@ private:
     }
     return angle;
   }
+    // static double angleDifference(double target, double current)
+    // {
+    //   return normalizeAngle(target - current);
+    // }
 
+    // static double roundToRightAngle(double angle)
+    // {
+    //   return std::round(angle / TURN_STEP_RAD) * TURN_STEP_RAD;
+    // }
+
+    // static int sign(double value)
+    // {
+    //   return (0.0 < value) - (value < 0.0);
+    // }
 
   /**
    * @brief Calculate the number of ticks between two encoder readings, accounting for overflow
@@ -458,6 +527,7 @@ private:
   double theta = 0.0;
 
   double startYaw = 0.0;
+  double targetYaw = 0.0;
   int turnDirection_ = -1;
   bool first = true;
   rclcpp::Time last_time;

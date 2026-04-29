@@ -38,6 +38,12 @@ private:
         message.data = {
             60, 1, 1, 60, 1, 1, 60, 1, 1, 60, 1, 1
             };
+        if(state_->imuReady.load())
+        {
+            message.data = {
+                40, 1, 1, 40, 1, 1, 40, 1, 1, 1, 40, 1
+                };
+        }
     }
     else if(button_state == 1) // corridor drive -> LEDs are cycling yellow
     {
