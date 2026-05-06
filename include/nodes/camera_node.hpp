@@ -45,9 +45,8 @@ class CameraNode : public rclcpp::Node
           std::cout << "Arucos found: ";
           for (size_t i = 0; i < marker_ids.size(); i++) {
               std::cout << marker_ids[i] << " ";
+              state_->cameraData[i].store(marker_ids[i]);
               
-              // TODO: Create Aruco struct and add to result vector
-              // arucos.emplace_back(...);
             arucos.emplace_back(Aruco{marker_ids[i], marker_corners[i]});
 
           }

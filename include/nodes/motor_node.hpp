@@ -6,6 +6,7 @@
 #include <cmath>
 #include <algorithm>
 #include <atomic>
+#include <iostream>
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/u_int8_multi_array.hpp"
@@ -199,7 +200,6 @@ private:
         double front = state_->lidarFront.load();
         double left = state_->lidarLeft.load();
         double right = state_->lidarRight.load();
-
         switch (corridorState)
         {
         case CALIBRATION:
@@ -222,8 +222,138 @@ private:
         {
             state_->corridorState.store(CorridorState::USING_LIDAR);
 
+            const double wallSeenDistance = 0.35;
+
+            bool wallSeenAfterTurn = (std::isfinite(left) && left < wallSeenDistance) ||
+                                 (std::isfinite(right) && right < wallSeenDistance);
+
             const double frontStop = 0.3;
+            const double openSide = 0.50;
+            const double openFront = 0.45;
             int baseSpeedCorridor = 140;
+
+            bool frontOpen = !std::isfinite(front) || front > openFront;
+            bool leftOpen  = !std::isfinite(left)  || left  > openSide;
+            bool rightOpen = !std::isfinite(right) || right > openSide;
+            bool intersectionDetected = (leftOpen && rightOpen) || (frontOpen && (leftOpen || rightOpen));
+
+            if(intersectionFlag_){
+                if(wallSeenAfterTurn){
+                    intersectionFlag_ = false;
+                    intersectionCounter_ = 0;
+                    std::cout << "Wall seen after turn, resetting intersection flag" << std::endl;
+                }
+            }else{
+                if(intersectionDetected){
+                    intersectionCounter_++;
+                }else{
+                    intersectionCounter_ = 0;
+                }
+
+                if(intersectionCounter_ > 5){
+                    intersectionFlag_ = true;
+                    std::cout << "Intersection detected, setting flag" << std::endl;
+                    int aruco[2];
+                    aruco[0] = state_->cameraData[0].load();
+                    aruco[1] = state_->cameraData[1].load();
+                    state_->cameraData[0].store(-1);
+                    state_->cameraData[1].store(-1);
+                    int direction = 0;
+                    for(int i = 0; i < 2; i++){
+                        std::cout << "ARUCO[" << i << "] = " << aruco[i] << std::endl;
+                        switch(aruco[i]){
+                        case 0:
+                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: LEFT");
+                            direction = 1;
+                            break;
+                        case 1:
+                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: FRONT");
+                            direction = 0;
+                            break;
+                        case 2:
+                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: RIGHT");
+                            direction = -1;
+                            break;
+                        default:
+                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: UNKNOWN");
+                        }
+                    }
+                    
+
+                    if(direction != 0){
+                        turnDirection_ = direction;
+                        startYaw = state_->imuAngle.load();
+                        corridorState = TURNING;
+                        intersectionCounter_ = 0;
+                        return;
+                    }
+                    
+                    RCLCPP_INFO(
+                        this->get_logger(),
+                        "INTERSECTION detected: frontOpen=%d leftOpen=%d rightOpen=%d",
+                        frontOpen, leftOpen, rightOpen
+                    );
+                    std::cout << "INTERSECTION detected: frontOpen=" << frontOpen << " leftOpen=" << leftOpen << " rightOpen=" << rightOpen << std::endl;
+                }
+            }
+
+            /*if(intersectionIgnoreCounter_ > 0){
+                intersectionIgnoreCounter_--;
+                intersectionCounter_ = 0;
+            }else{
+                if(intersectionDetected){
+                    intersectionCounter_++;
+                    std::cout << "Intersection counter: " << intersectionCounter_ << std::endl;
+                }else{
+                    intersectionCounter_ = 0;
+                }
+
+                if(intersectionCounter_ > 5){
+                    intersectionCounter_ = 0;
+
+                    int aruco[2];
+                    aruco[0] = state_->cameraData[0].load();
+                    aruco[1] = state_->cameraData[1].load();
+                    state_->cameraData[0].store(-1);
+                    state_->cameraData[1].store(-1);
+                    int direction = 0;
+                    for(int i = 0; i < 2; i++){
+                        std::cout << "ARUCO[" << i << "] = " << aruco[i] << std::endl;
+                        switch(aruco[i]){
+                        case 0:
+                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: LEFT");
+                            direction = 1;
+                            break;
+                        case 1:
+                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: FRONT");
+                            direction = 0;
+                            break;
+                        case 2:
+                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: RIGHT");
+                            direction = -1;
+                            break;
+                        default:
+                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: UNKNOWN");
+                        }
+                    }
+                    
+
+                    if(direction != 0){
+                        turnDirection_ = direction;
+                        startYaw = state_->imuAngle.load();
+                        corridorState = TURNING;
+                        intersectionCounter_ = 0;
+                        return;
+                    }
+                    
+                    RCLCPP_INFO(
+                        this->get_logger(),
+                        "INTERSECTION detected: frontOpen=%d leftOpen=%d rightOpen=%d",
+                        frontOpen, leftOpen, rightOpen
+                    );
+                    std::cout << "INTERSECTION detected: frontOpen=" << frontOpen << " leftOpen=" << leftOpen << " rightOpen=" << rightOpen << std::endl;
+                }
+            }*/
 
             if (std::isfinite(front) && front < frontStop)
             {
@@ -287,9 +417,10 @@ private:
         }
         case AFTER_TURN_CRAWLING:
         {
-            stopMotors();
+            //stopMotors();
+            setMotorSpeeds(130, 130);
 
-            if (++counter > 100)
+            if (++counter > 25)
             {
                 targetYaw_ = state_->imuAngle.load();
 
@@ -297,23 +428,24 @@ private:
                 counter = 0;
 
                 corridorState = CORRIDOR_NAVIGATION;
+                intersectionIgnoreCounter_ = 50;
+                intersectionFlag_ = true;
                 state_->corridorState.store(CorridorState::USING_LIDAR);
             }
 
             break;
-
-            regulatorCorridorImuLidar(left, right, 140);
-            break;
         }
         case END:
         {
-            targetYaw_ = state_->imuAngle.load();
+            /*targetYaw_ = state_->imuAngle.load();
 
             resetPid();
             counter = 0;
 
             corridorState = CORRIDOR_NAVIGATION;
-            state_->corridorState.store(CorridorState::USING_LIDAR);
+            state_->corridorState.store(CorridorState::USING_LIDAR);*/
+            state_->corridorState.store(CorridorState::IDLE);
+            stopMotors();
             break;
         }
         }
@@ -418,7 +550,7 @@ private:
 
     void corridorTurning(int direction, int diff)
     {
-        if (direction > 0)
+        if (direction > 0) 
         {
             // turn right
             setMotorSpeeds(127 + diff, 127 - diff);
@@ -430,53 +562,7 @@ private:
         }
     }
 
-    /*
-    void regulatorPID_line(const double error)
-    {
-        // double error = (state_->left_sensor - state_->right_sensor);
 
-        // bad values
-        // double dt = 0.05;
-        // double k =  4;
-        // double ki = 0.0;
-        // double kd = 0.01;
-
-        // FINAL VALUES
-        double dt = 0.01;
-        double k = 5.0;
-        double ki = 0.0;
-        double kd = 0.02;
-
-        double Kp = k * error;
-        integral_ += error * dt;
-        double Ki = integral_ * ki;
-
-        double derivative = (error - prev_error_) / dt;
-        //double Kd = derivative*kd;
-        //double correction = Kp + Ki+ Kd;
-
-        double correction = k * error + ki * integral_ + kd * derivative;
-
-        int baseSpeed = 135;
-
-        if (std::abs(error) > 0.4)
-        { // Need to turn more sharply, reduce base speed to allow for greater correction
-            baseSpeed = 130;
-        }
-
-        int left = static_cast<int>(baseSpeed + correction);
-        int right = static_cast<int>(baseSpeed - correction);
-
-        left = std::clamp(left, 127, 140);
-        right = std::clamp(right, 127, 140);
-
-        RCLCPP_INFO(this->get_logger(), "Error: %.4f, Correction: %.4f, Left: %d, Right: %d", error, correction, left, right);
-
-        setMotorSpeeds(left, right);
-
-        prev_error_ = error;
-    }
-    */
 
     void setMotorSpeeds(int left, int right)
     {
@@ -604,4 +690,8 @@ private:
     double targetYaw_ = 0.0;
     int headingIndex_ = 0;
     bool baseYawInitialized_ = false;
+
+    int intersectionCounter_ = 0;
+    int intersectionIgnoreCounter_ = 0;
+    bool intersectionFlag_ = false;
 };

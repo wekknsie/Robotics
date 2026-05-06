@@ -2,6 +2,7 @@
 #include <atomic>
 #include <cstdint>
 #include <limits>
+#include <array>
 
 enum class CorridorState : uint32_t {
     IDLE = 0,
@@ -28,4 +29,7 @@ struct SharedState {
 
   // data from motor node
   std::atomic<CorridorState> corridorState{CorridorState::IDLE};
+
+  //data from camera node
+  std::array<std::atomic<int>, 10> cameraData;
 };
