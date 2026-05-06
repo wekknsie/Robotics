@@ -59,7 +59,8 @@ private:
                 double lidarRight = state_->lidarRight.load();
                 double error = lidarLeft - lidarRight;
 
-                if (std::abs(error) < 0.05)
+
+                if (std::abs(error) < 0.012 || lidarLeft > 0.45 || lidarRight > 0.45)
                 {
                     message.data = {
                         60, 60, 1, // Front led

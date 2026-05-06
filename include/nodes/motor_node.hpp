@@ -34,13 +34,13 @@ public:
         stopMotors();
         resetPid();
 
-        publisher_ = this->create_publisher<std_msgs::msg::UInt8MultiArray>("/bpc_prp_robot/set_motor_speeds", 50);
+        publisher_ = this->create_publisher<std_msgs::msg::UInt8MultiArray>("/bpc_prp_robot/set_motor_speeds", 20);
         timer_ = this->create_wall_timer(
-            50ms, std::bind(&MotorNode::timer_callback, this));
+            20ms, std::bind(&MotorNode::timer_callback, this));
 
         subscriber_ = this->create_subscription<std_msgs::msg::UInt32MultiArray>(
             "/bpc_prp_robot/encoders",
-            50,
+            20,
             [this](std_msgs::msg::UInt32MultiArray::SharedPtr msg)
             {
                 this->encoder_callback(msg);
@@ -96,7 +96,7 @@ private:
         }
         else if (button_state == 1)
         { // corridor navigation
-            // testIMU();
+            //testIMU();
             corridorNavigation();
         }
     }
@@ -207,13 +207,19 @@ private:
             resetPid();
             stopMotors();
             counter = 0;
+
+            baseYaw_ = state_->imuAngle.load();
+            headingIndex_ = 0;
+            targetYaw_ = baseYaw_;
+            baseYawInitialized_ = true;
+
+            state_->corridorState.store(CorridorState::IDLE);
             corridorState = CORRIDOR_NAVIGATION;
             break;
         }
+
         case CORRIDOR_NAVIGATION:
         {
-            RCLCPP_INFO(this->get_logger(), "Lidar Front: %.4f, Left: %.4f, Right: %.4f", front, left, right);
-
             state_->corridorState.store(CorridorState::USING_LIDAR);
 
             const double frontStop = 0.3;
@@ -224,30 +230,22 @@ private:
                 resetPid();
                 stopMotors();
 
-                startYaw = state_->imuAngle.load();
                 turnDirection_ = chooseTurnDirection(left, right);
-                counter = 0;
+                startYaw = state_->imuAngle.load();
 
-                state_->corridorState.store(CorridorState::TURNING);
+                counter = 0;
                 corridorState = TURNING;
+
                 break;
             }
 
-            constexpr double sideMaxDistance = 0.45;
-            double leftForControl = cappedDistance(left, sideMaxDistance);
-            double rightForControl = cappedDistance(right, sideMaxDistance);
-            double error = leftForControl - rightForControl;
-            if (leftForControl > 0.35 && rightForControl > 0.35)
-            {
-                error = 0.0;
-            }
-
-            RCLCPP_INFO(this->get_logger(), "Corridor Error: %.4f Left %.4f Right %.4f", error, left, right);
-            regulatorPID_lidar(error, baseSpeedCorridor);
+            regulatorCorridorImuLidar(left, right, baseSpeedCorridor);
             break;
         }
+
         case TURNING:
         {
+            RCLCPP_INFO(this->get_logger(), "TURNING, Front: %.3f, Left: %.3f, Right: %.3f", front, left, right);
             state_->corridorState.store(CorridorState::USING_IMU);
 
             double yaw = state_->imuAngle.load();
@@ -278,7 +276,7 @@ private:
                 stopMotors();
                 resetPid();
                 counter = 0;
-                corridorState = END;
+                corridorState = AFTER_TURN_CRAWLING;
                 break;
             }
 
@@ -287,18 +285,33 @@ private:
             // RCLCPP_INFO(this->get_logger(), "TURNING, Yaw: %.4f, Start Yaw: %.4f, Turn angle: %.4f, Direction: %d", yaw, startYaw, turnAngle, turnDirection_);
             break;
         }
-        case END:
+        case AFTER_TURN_CRAWLING:
         {
-            // now wihtout crawling, just change state to NAVIGATION
-            /*setMotorSpeeds(134, 134);
-            if (++counter > 75)
+            stopMotors();
+
+            if (++counter > 100)
             {
-                counter = 0;
+                targetYaw_ = state_->imuAngle.load();
+
                 resetPid();
+                counter = 0;
+
                 corridorState = CORRIDOR_NAVIGATION;
+                state_->corridorState.store(CorridorState::USING_LIDAR);
             }
 
-            RCLCPP_INFO(this->get_logger(), "POPOJIZDIM - %d", counter);*/
+            break;
+
+            regulatorCorridorImuLidar(left, right, 140);
+            break;
+        }
+        case END:
+        {
+            targetYaw_ = state_->imuAngle.load();
+
+            resetPid();
+            counter = 0;
+
             corridorState = CORRIDOR_NAVIGATION;
             state_->corridorState.store(CorridorState::USING_LIDAR);
             break;
@@ -326,19 +339,20 @@ private:
         constexpr double kp = 8.0;
         constexpr double kd = 1.8;
         constexpr double ki = 0.0;
+    
 
-        if (std::abs(error) < 0.025)
+        if (std::abs(error) < 0.012)
         {
             error = 0.0;
         }
 
-        //integral_ += error * dt;
-        //integral_ = std::clamp(integral_, -0.5, 0.5);
+        integral_ += error * dt;
+        integral_ = std::clamp(integral_, -0.5, 0.5);
 
         double derivative = (error - prev_error_) / dt;
         derivative = std::clamp(derivative, -1.0, 1.0);
 
-        double correction = kp * error + kd * derivative;
+        double correction = kp * error + kd * derivative + ki * integral_;
         correction = std::clamp(correction, -20.0, 20.0);
 
         int left = static_cast<int>(baseSpeed - correction);
@@ -364,14 +378,54 @@ private:
         }
     }
 
+    void regulatorCorridorImuLidar(double leftDist, double rightDist, int baseSpeed)
+    {
+        double yaw = state_->imuAngle.load();
+
+        double headingError = normalizeAngle(targetYaw_ - yaw);
+
+        constexpr double sideMaxDistance = 0.45;
+        double left = cappedDistance(leftDist, sideMaxDistance);
+        double right = cappedDistance(rightDist, sideMaxDistance);
+
+        double wallError = left - right;
+
+        if (left >= sideMaxDistance || right >= sideMaxDistance)
+        {
+            wallError = 0.0;
+        }
+
+        constexpr double kpHeading = 18.0;
+        constexpr double kpWall = 25.0;
+
+        double correction = kpHeading * headingError + kpWall * wallError;
+        correction = std::clamp(correction, -15.0, 15.0);
+
+        int leftSpeed = static_cast<int>(std::lround(baseSpeed - correction));
+        int rightSpeed = static_cast<int>(std::lround(baseSpeed + correction));
+
+        leftSpeed = std::clamp(leftSpeed, 127, 155);
+        rightSpeed = std::clamp(rightSpeed, 127, 155);
+
+        setMotorSpeeds(leftSpeed, rightSpeed);
+
+        RCLCPP_INFO(
+            this->get_logger(),
+            "CTRL headingErr=%.3f wallErr=%.3f corr=%.2f L=%d R=%d",
+            headingError, wallError, correction, leftSpeed, rightSpeed
+        );
+    }
+
     void corridorTurning(int direction, int diff)
     {
         if (direction > 0)
-        { // turn left
+        {
+            // turn right
             setMotorSpeeds(127 + diff, 127 - diff);
         }
         else
-        { // turn right
+        {
+            // turn left
             setMotorSpeeds(127 - diff, 127 + diff);
         }
     }
@@ -468,15 +522,15 @@ private:
     int chooseTurnDirection(double left, double right) const
     {
         constexpr double sameClearanceEpsilon = 0.05;
+
         double leftClearance = clearanceForTurn(left);
         double rightClearance = clearanceForTurn(right);
 
         if (std::abs(leftClearance - rightClearance) < sameClearanceEpsilon)
         {
-            RCLCPP_INFO(this->get_logger(), "Both sides have similar clearance (Left: %.4f, Right: %.4f), defaulting to right turn", leftClearance, rightClearance);
-            return -1; // Default to a right turn if both sides look equally open.
+            return 1; // default right
         }
-        RCLCPP_INFO(this->get_logger(), "Choosing turn direction based on clearance (Left: %.4f, Right: %.4f)", leftClearance, rightClearance);
+
         return leftClearance > rightClearance ? -1 : 1;
     }
 
@@ -520,7 +574,8 @@ private:
         CALIBRATION = 0,
         CORRIDOR_NAVIGATION = 1,
         TURNING = 2,
-        END = 3
+        AFTER_TURN_CRAWLING = 3,
+        END = 4
     };
 
     corridor_state corridorState = CALIBRATION;
@@ -543,4 +598,10 @@ private:
     std::shared_ptr<SharedState> state_;
     rclcpp::Publisher<std_msgs::msg::UInt8MultiArray>::SharedPtr publisher_;
     rclcpp::Subscription<std_msgs::msg::UInt32MultiArray>::SharedPtr subscriber_;
+
+    // new variables for imu testing
+    double baseYaw_ = 0.0;
+    double targetYaw_ = 0.0;
+    int headingIndex_ = 0;
+    bool baseYawInitialized_ = false;
 };

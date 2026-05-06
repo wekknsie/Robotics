@@ -64,9 +64,9 @@ private:
             return LidarFilterResults{inf, inf, inf, inf};
         }
 
-        constexpr float front_window = PI / 12.0f; // 15 degrees window for front readings
-        constexpr float side_window = PI / 10.0f;  // 18 degrees window for side readings
-        constexpr float lidar_to_robot_yaw = PI;
+        float front_window = PI / 12.0f; // 15 degrees window for front readings
+        float side_window = PI / 6.0f;  // 30 degrees window for side readings
+        float lidar_to_robot_yaw = PI;
 
         // Compute the angular step between each range reading
         const float angle_step = scan.angle_increment != 0.0f
@@ -126,17 +126,17 @@ private:
 
     float normalizeRange(float range, float range_min, float range_max)
     {
-        if (std::isnan(range))
-        {
-            return std::numeric_limits<float>::infinity();
-        }
-
         if (std::isinf(range))
         {
             return std::numeric_limits<float>::infinity();
         }
 
-        if (range < range_min || range > range_max)
+        if (range < range_min)
+        {
+            return range_min;
+        }
+
+        if (range > range_max)
         {
             return std::numeric_limits<float>::infinity();
         }
@@ -157,7 +157,7 @@ private:
         return angle;
     }
     
-    constexpr float PI = 3.14159265358979323846f;
+    float PI = 3.14159265358979323846f;
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr subscription_;
     std::shared_ptr<SharedState> state_;
 };

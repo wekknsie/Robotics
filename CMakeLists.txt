@@ -15,11 +15,6 @@ find_package(OpenCV REQUIRED)
 find_package(SDL2 REQUIRED)
 find_package(visualization_msgs REQUIRED)
 
-set(SRC
-    ${CMAKE_SOURCE_DIR}/src/example.cpp
-    ${CMAKE_SOURCE_DIR}/src/nodes/io_node.cpp
-        src/nodes/io_node.cpp
-)
 
 set(AMENT_LIBS rclcpp std_msgs sensor_msgs cv_bridge image_transport)
 
