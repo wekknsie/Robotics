@@ -26,7 +26,7 @@ public:
         state_->imuReady.store(false);
 
         subscription_ = this->create_subscription<sensor_msgs::msg::Imu>(
-            "/bpc_prp_robot/imu", 10, std::bind(&ImuNode::topic_callback, this, _1));
+            "/bpc_prp_robot/imu", 50, std::bind(&ImuNode::topic_callback, this, _1));
     }
 
 private:

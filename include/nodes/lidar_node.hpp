@@ -26,7 +26,7 @@ public:
         : Node("lidar_node"), state_(state)
     {
         subscription_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
-            "/bpc_prp_robot/lidar", 10, std::bind(&LidarNode::topic_callback, this, _1));
+            "/bpc_prp_robot/lidar", 50, std::bind(&LidarNode::topic_callback, this, _1));
     }
 
 private:

@@ -20,7 +20,7 @@ class CameraNode : public rclcpp::Node
       dictionary_ = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_50);
 
       subscription_ = this->create_subscription<sensor_msgs::msg::CompressedImage>(
-      "bpc_prp_robot/camera/compressed", 10, std::bind(&CameraNode::topic_callback, this, _1));
+      "bpc_prp_robot/camera/compressed", 50, std::bind(&CameraNode::topic_callback, this, _1));
     }
 
     struct Aruco {

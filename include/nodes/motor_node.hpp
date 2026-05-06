@@ -36,13 +36,13 @@ public:
   MotorNode(std::shared_ptr<SharedState> state)
   : Node("motor_node"), count_(0), state_(state)
   {
-    publisher_ = this->create_publisher<std_msgs::msg::UInt8MultiArray>("/bpc_prp_robot/set_motor_speeds", 10);
+    publisher_ = this->create_publisher<std_msgs::msg::UInt8MultiArray>("/bpc_prp_robot/set_motor_speeds", 50);
     timer_ = this->create_wall_timer(
       50ms, std::bind(&MotorNode::timer_callback, this));
 
     subscriber_ = this->create_subscription<std_msgs::msg::UInt32MultiArray>(
       "/bpc_prp_robot/encoders",
-      10,
+      50,
       [this](std_msgs::msg::UInt32MultiArray::SharedPtr msg) {
         this->encoder_callback(msg);
       }
