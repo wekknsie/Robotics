@@ -81,7 +81,7 @@ private:
 
         int button_state = state_->last_button.load();
         if (button_state == 0)
-        {   
+        {
             stopMotors();
             resetPid();
             state_->corridorState.store(CorridorState::IDLE);
@@ -91,8 +91,8 @@ private:
         }
 
         if (button_state == 2)
-        {   // maze escape (old line following)
-            // regulatorPID_line(state_->left_sensor.load() - state_->right_sensor.load());
+        { // maze escape (old line following)
+          // regulatorPID_line(state_->left_sensor.load() - state_->right_sensor.load());
         }
         else if (button_state == 1)
         { // corridor navigation
@@ -247,7 +247,7 @@ private:
             break;
         }
         case TURNING:
-        {   
+        {
             state_->corridorState.store(CorridorState::USING_IMU);
 
             double yaw = state_->imuAngle.load();
@@ -288,7 +288,7 @@ private:
             break;
         }
         case END:
-        {   
+        {
             // now wihtout crawling, just change state to NAVIGATION
             /*setMotorSpeeds(134, 134);
             if (++counter > 75)
@@ -315,26 +315,31 @@ private:
         last_time = now;
 
         if (dt <= 0.0)
+        {
             dt = 0.01;
+        }
         if (dt > 0.05)
+        {
             dt = 0.05;
+        }
 
-        double kp = 5.0;
-        double kd = 2.0;
-        double ki = 0.0;
+        constexpr double kp = 8.0;
+        constexpr double kd = 1.8;
+        constexpr double ki = 0.0;
 
         if (std::abs(error) < 0.025)
         {
             error = 0.0;
         }
 
-        integral_ += error * dt;
-        integral_ = std::clamp(integral_, -0.5, 0.5);
+        //integral_ += error * dt;
+        //integral_ = std::clamp(integral_, -0.5, 0.5);
 
         double derivative = (error - prev_error_) / dt;
         derivative = std::clamp(derivative, -1.0, 1.0);
 
-        double correction = 1.8 * (kp * error + kd * derivative + ki * integral_);
+        double correction = kp * error + kd * derivative;
+        correction = std::clamp(correction, -20.0, 20.0);
 
         int left = static_cast<int>(baseSpeed - correction);
         int right = static_cast<int>(baseSpeed + correction);
@@ -343,6 +348,7 @@ private:
         right = std::clamp(right, 127, 155);
 
         setMotorSpeeds(left, right);
+        prev_error_ = error;
 
         if (left > right)
         {
@@ -356,8 +362,6 @@ private:
         {
             RCLCPP_INFO(this->get_logger(), "Moving STRAIGHT, Lidar Error: %.4f, Correction: %.4f, Left: %d, Right: %d\n", error, correction, left, right);
         }
-
-        prev_error_ = error;
     }
 
     void corridorTurning(int direction, int diff)
