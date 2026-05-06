@@ -1,6 +1,12 @@
-#include <rclcpp/rclcpp.hpp>
-#include "RosExampleClass.hpp"
+//////////////////////////////////////////////
+// filename: main.cpp                       //
+// Project Blueberry                      	//
+// Authors:						  			//
+//  * Jan Hájek / wekknsie               	//
+//  * Horbal Volodymyr-Mykhailo / Mr-Vova   //
+//////////////////////////////////////////////
 
+#include <rclcpp/rclcpp.hpp>
 #include "./nodes/io_node.hpp"
 #include "./nodes/led_publisher.hpp"
 #include "./nodes/motor_node.hpp"
@@ -19,7 +25,7 @@ int main(int argc, char* argv[]) {
 
     // Create multiple nodes
     auto state = std::make_shared<SharedState>();
-    state->last_button = 0;
+    state->last_button.store(0);
 
     auto buttonNode = std::make_shared<ButtonNode>(state);
     auto ledNode = std::make_shared<LedNode>(state);
