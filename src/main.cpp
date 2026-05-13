@@ -27,6 +27,11 @@ int main(int argc, char* argv[]) {
     auto state = std::make_shared<SharedState>();
     state->last_button.store(0);
 
+    for (auto &v : state->cameraData)
+    {
+        v.store(-99);
+    }
+
     auto buttonNode = std::make_shared<ButtonNode>(state);
     auto ledNode = std::make_shared<LedNode>(state);
     auto motorNode = std::make_shared<MotorNode>(state);

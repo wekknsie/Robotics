@@ -26,7 +26,7 @@ public:
         : Node("lidar_node"), state_(state)
     {
         subscription_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
-            "/bpc_prp_robot/lidar", 50, std::bind(&LidarNode::topic_callback, this, _1));
+            "/bpc_prp_robot/lidar", 20, std::bind(&LidarNode::topic_callback, this, _1));
     }
 
 private:
@@ -36,6 +36,9 @@ private:
         float back;
         float left;
         float right;
+
+        float leftBeam;
+        float rightBeam;
     };
 
     void topic_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
@@ -45,6 +48,9 @@ private:
         state_->lidarLeft.store((double)data.left);
         state_->lidarRight.store((double)data.right);
         state_->lidarFront.store((double)data.front);
+
+        state_->lidarLeftBeam.store((double)data.leftBeam);
+        state_->lidarRightBeam.store((double)data.rightBeam);
 
         // RCLCPP_INFO(this->get_logger(), "Data from lidar: \n front:'%f',back:'%f',left:'%f',right:'%f'",data.front,data.back,data.right,data.left);
     }
@@ -56,6 +62,8 @@ private:
         std::vector<float> right{};
         std::vector<float> front{};
         std::vector<float> back{};
+        float leftBeam = std::numeric_limits<float>::infinity();
+        float rightBeam = std::numeric_limits<float>::infinity();
         const auto &points = scan.ranges;
 
         if (points.empty())
@@ -66,6 +74,7 @@ private:
 
         float front_window = PI / 12.0f; // 15 degrees window for front readings
         float side_window = PI / 6.0f;  // 30 degrees window for side readings
+        float beam_window = PI / 180.0f * 2.0f; // 2 degrees window for beam readings
         float lidar_to_robot_yaw = PI;
 
         // Compute the angular step between each range reading
@@ -81,6 +90,16 @@ private:
             if (!std::isfinite(range))
             {
                 continue;
+            }
+
+            if (std::abs(angle - PI / 2.0f) <= beam_window)
+            {
+                leftBeam = std::min(leftBeam, range);
+            }
+
+            if (std::abs(angle + PI / 2.0f) <= beam_window)
+            {
+                rightBeam = std::min(rightBeam, range);
             }
 
             if (std::abs(angle) <= front_window)
@@ -106,6 +125,8 @@ private:
             median(back),
             median(left),
             median(right),
+            leftBeam,
+            rightBeam
         };
     }
 

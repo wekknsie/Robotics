@@ -222,15 +222,28 @@ private:
         {
             state_->corridorState.store(CorridorState::USING_LIDAR);
 
+            double leftBeam = state_->lidarLeftBeam.load();
+            double rightBeam = state_->lidarRightBeam.load();
+
             const double wallSeenDistance = 0.35;
 
-            bool wallSeenAfterTurn = (std::isfinite(left) && left < wallSeenDistance) ||
-                                 (std::isfinite(right) && right < wallSeenDistance);
+            //bool wallSeenAfterTurn = (std::isfinite(left) && left < wallSeenDistance) ||
+            //                    (std::isfinite(right) && right < wallSeenDistance);
+            
+            if(!leftWallSeen_){
+                leftWallSeen_ = std::isfinite(left) && leftBeam < wallSeenDistance;
+            }
+            
+            if(!rightWallSeen_){
+                rightWallSeen_ = std::isfinite(right) && rightBeam < wallSeenDistance;
+            }
+
+            //RCLCPP_INFO(this->get_logger(), "RIGHT WALL SEEN? %d d: %f, LEFT WALL SEEN? %d d: %f", rightWallSeen_, rightBeam, leftWallSeen_, leftBeam);
 
             const double frontStop = 0.3;
             const double openSide = 0.50;
             const double openFront = 0.45;
-            int baseSpeedCorridor = 140;
+            int baseSpeedCorridor = 145;
 
             bool frontOpen = !std::isfinite(front) || front > openFront;
             bool leftOpen  = !std::isfinite(left)  || left  > openSide;
@@ -238,7 +251,7 @@ private:
             bool intersectionDetected = (leftOpen && rightOpen) || (frontOpen && (leftOpen || rightOpen));
 
             if(intersectionFlag_){
-                if(wallSeenAfterTurn){
+                if(leftWallSeen_ && rightWallSeen_){
                     intersectionFlag_ = false;
                     intersectionCounter_ = 0;
                     std::cout << "Wall seen after turn, resetting intersection flag" << std::endl;
@@ -250,7 +263,7 @@ private:
                     intersectionCounter_ = 0;
                 }
 
-                if(intersectionCounter_ > 5){
+                if(intersectionCounter_ > 10){
                     intersectionFlag_ = true;
                     std::cout << "Intersection detected, setting flag" << std::endl;
                     int aruco[2];
@@ -263,22 +276,47 @@ private:
                         std::cout << "ARUCO[" << i << "] = " << aruco[i] << std::endl;
                         switch(aruco[i]){
                         case 0:
-                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: LEFT");
-                            direction = 1;
+                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: STRAIGHT");
+                            direction = 0;
                             break;
                         case 1:
-                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: FRONT");
-                            direction = 0;
+                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: LEFT");
+                            direction = -1;
                             break;
                         case 2:
                             RCLCPP_INFO(this->get_logger(), "ARUCO detected: RIGHT");
-                            direction = -1;
+                            direction = 1;
+                            break;
+                        case 10:
+                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: TREASURE FRONT");
+                            break;
+                        case 11:
+                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: TREASURE LEFT");
+                            break;
+                        case 12:
+                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: TREASURE RIGHT");
+                            break;
+                        case -99:
+                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: NOTHING");
+                            break;
+                        case -1:
+                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: NOTHING");
                             break;
                         default:
                             RCLCPP_INFO(this->get_logger(), "ARUCO detected: UNKNOWN");
+                            if(rightOpen){
+                                direction = 1;
+                            }else if(frontOpen){
+                                direction = 0;
+                            }else if(leftOpen){
+                                direction = -1;
+                            }
                         }
                     }
                     
+                    RCLCPP_INFO(this->get_logger(), "Chosen direction: %d", direction);
+                    rightWallSeen_ = false;
+                    leftWallSeen_ = false;
 
                     if(direction != 0){
                         turnDirection_ = direction;
@@ -406,6 +444,8 @@ private:
                 stopMotors();
                 resetPid();
                 counter = 0;
+                leftWallSeen_ = false;
+                rightWallSeen_ = false;
                 corridorState = AFTER_TURN_CRAWLING;
                 break;
             }
@@ -530,8 +570,14 @@ private:
         constexpr double kpHeading = 18.0;
         constexpr double kpWall = 25.0;
 
-        double correction = kpHeading * headingError + kpWall * wallError;
-        correction = std::clamp(correction, -15.0, 15.0);
+        //double correction = kpHeading * headingError + kpWall * wallError;
+        //correction = std::clamp(correction, -15.0, 15.0);
+
+        double headingCorrection = std::clamp(kpHeading * headingError, -4.0, 4.0);
+
+        double wallCorrection = kpWall * wallError;
+
+        double correction = headingCorrection + wallCorrection;
 
         int leftSpeed = static_cast<int>(std::lround(baseSpeed - correction));
         int rightSpeed = static_cast<int>(std::lround(baseSpeed + correction));
@@ -548,6 +594,89 @@ private:
         );
     }
 
+    /* // chatgpt version, not working well
+    void regulatorCorridorImuLidar(double leftDist, double rightDist, int baseSpeed)
+    {
+        double yaw = state_->imuAngle.load();
+
+        double headingError =
+            normalizeAngle(targetYaw_ - yaw);
+
+        constexpr double sideMaxDistance = 0.45;
+        constexpr double desiredWallDistance = 0.22;
+
+        double left = cappedDistance(leftDist, sideMaxDistance);
+        double right = cappedDistance(rightDist, sideMaxDistance);
+
+        bool leftValid = left < sideMaxDistance;
+        bool rightValid = right < sideMaxDistance;
+
+        double wallError = 0.0;
+
+        if (leftValid && rightValid)
+        {
+            wallError = left - right;
+        }
+        else if (leftValid)
+        {
+            wallError = desiredWallDistance - left;
+        }
+        else if (rightValid)
+        {
+            wallError = right - desiredWallDistance;
+        }
+
+        constexpr double kpHeading = 3.0;
+        constexpr double kpWall = 25.0;
+
+        double headingCorrection =
+            std::clamp(kpHeading * headingError, -4.0, 4.0);
+
+        double wallCorrection =
+            kpWall * wallError;
+
+        double correction =
+            headingCorrection + wallCorrection;
+
+        correction =
+            std::clamp(correction, -15.0, 15.0);
+
+        int leftSpeed =
+            static_cast<int>(std::lround(baseSpeed - correction));
+
+        int rightSpeed =
+            static_cast<int>(std::lround(baseSpeed + correction));
+
+        leftSpeed = std::clamp(leftSpeed, 127, 155);
+        rightSpeed = std::clamp(rightSpeed, 127, 155);
+
+        setMotorSpeeds(leftSpeed, rightSpeed);
+
+        RCLCPP_INFO(
+            this->get_logger(),
+            "CTRL headingErr=%.3f wallErr=%.3f "
+            "headCorr=%.2f wallCorr=%.2f "
+            "final=%.2f L=%d R=%d",
+            headingError,
+            wallError,
+            headingCorrection,
+            wallCorrection,
+            correction,
+            leftSpeed,
+            rightSpeed
+        );
+
+        if (leftValid && rightValid)
+        {
+            if (std::abs(wallError) < 0.03)
+            {
+                targetYaw_ =
+                    0.98 * targetYaw_ +
+                    0.02 * yaw;
+            }
+        }
+    }*/
+
     void corridorTurning(int direction, int diff)
     {
         if (direction > 0) 
@@ -561,8 +690,6 @@ private:
             setMotorSpeeds(127 - diff, 127 + diff);
         }
     }
-
-
 
     void setMotorSpeeds(int left, int right)
     {
@@ -694,4 +821,7 @@ private:
     int intersectionCounter_ = 0;
     int intersectionIgnoreCounter_ = 0;
     bool intersectionFlag_ = false;
+
+    bool leftWallSeen_ = false;
+    bool rightWallSeen_ = false;
 };

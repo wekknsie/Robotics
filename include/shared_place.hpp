@@ -23,6 +23,9 @@ struct SharedState {
   std::atomic<double> lidarRight{0.0};
   std::atomic<double> lidarFront{std::numeric_limits<double>::infinity()};
 
+  std::atomic<double> lidarLeftBeam{std::numeric_limits<double>::infinity()}; // for intersection detection
+  std::atomic<double> lidarRightBeam{std::numeric_limits<double>::infinity()};
+
   // IMU sensor
   std::atomic<double> imuAngle{0.0};
   std::atomic<bool> imuReady{false};
