@@ -240,7 +240,7 @@ private:
 
             //RCLCPP_INFO(this->get_logger(), "RIGHT WALL SEEN? %d d: %f, LEFT WALL SEEN? %d d: %f", rightWallSeen_, rightBeam, leftWallSeen_, leftBeam);
 
-            const double frontStop = 0.32;
+            const double frontStop = 0.315;
             const double openSide = 0.50;
             const double openFront = 0.45;
             int baseSpeedCorridor = 148;
@@ -263,7 +263,7 @@ private:
                     intersectionCounter_ = 0;
                 }
 
-                if(intersectionCounter_ > 20){
+                if(intersectionCounter_ > 15){
                     intersectionFlag_ = true;
                     std::cout << "Intersection detected, setting flag" << std::endl;
                     int aruco[2];
@@ -353,7 +353,15 @@ private:
                 resetPid();
                 stopMotors();
 
+                /*if(!frontOpen && !leftOpen && !rightOpen){
+                    turnDirection_ = 99;
+                    do180turn_ = true;
+                    RCLCPP_INFO(this->get_logger(), "DEAD END detected, doing 180 turn");
+                }else{
+                    turnDirection_ = chooseTurnDirection(left, right);
+                }*/
                 turnDirection_ = chooseTurnDirection(left, right);
+                
                 startYaw = state_->imuAngle.load();
 
                 counter = 0;
@@ -374,7 +382,13 @@ private:
             double yaw = state_->imuAngle.load();
             double turnAngle = std::abs(normalizeAngle(yaw - startYaw));
 
-            constexpr double TARGET = M_PI / 2.0;
+            double TARGET = 0.0;
+            if(do180turn_){
+                TARGET = M_PI;
+            }else{
+                TARGET = M_PI / 2.0;
+            }
+            //constexpr double TARGET = M_PI / 2.0;
 
             auto getTurnDiff = [&](double remaining)
             {
@@ -411,7 +425,8 @@ private:
             break;
         }
         case AFTER_TURN_CRAWLING:
-        {
+        {   
+            do180turn_ = false;
             stopMotors();
             //setMotorSpeeds(130, 130);
 
@@ -446,6 +461,7 @@ private:
         }
     }
 
+    // normal version
     /*void regulatorPID_lidar(double error, int baseSpeed)
     {
         static auto last_time = this->now();
@@ -506,25 +522,44 @@ private:
     }*/
 
     // version with one wall
-    /*void regulatorCorridorImuLidar(double leftDist, double rightDist, int baseSpeed)
+    void regulatorCorridorImuLidar(double leftDist, double rightDist, int baseSpeed)
     {
         double yaw = state_->imuAngle.load();
 
         double headingError = normalizeAngle(targetYaw_ - yaw);
 
         constexpr double sideMaxDistance = 0.45;
+        constexpr double desiredWallDistance = 0.205;
+
         double left = cappedDistance(leftDist, sideMaxDistance);
         double right = cappedDistance(rightDist, sideMaxDistance);
 
-        double wallError = left - right;
+        bool leftValid = left < sideMaxDistance;
+        bool rightValid = right < sideMaxDistance;
+
+        double wallError = 0.0;
+        double kpHeading = 14.0; // used to be 18
+        double kpWall = 25.0;
+
+        if (leftValid && rightValid)
+        {
+            wallError = left - right;
+        }
+        else if (leftValid)
+        {
+            wallError = desiredWallDistance - left;
+            kpWall = 20.0;
+        }
+        else if (rightValid)
+        {
+            wallError = right - desiredWallDistance;
+            kpWall = 20.0;
+        }
 
         if (left >= sideMaxDistance || right >= sideMaxDistance)
         {
             wallError = 0.0;
         }
-
-        constexpr double kpHeading = 14.0; // used to be 18
-        constexpr double kpWall = 25.0;
 
         //double correction = kpHeading * headingError + kpWall * wallError;
         //correction = std::clamp(correction, -15.0, 15.0);
@@ -548,9 +583,9 @@ private:
         //     "CTRL headingErr=%.3f wallErr=%.3f corr=%.2f L=%d R=%d",
         //     headingError, wallError, correction, leftSpeed, rightSpeed
         // );
-    }*/
+    }
 
-    void regulatorCorridorImuLidar(double leftDist, double rightDist, int baseSpeed)
+    /*void regulatorCorridorImuLidar(double leftDist, double rightDist, int baseSpeed)
     {
         double yaw = state_->imuAngle.load();
 
@@ -591,8 +626,8 @@ private:
             this->get_logger(),
             "CTRL headingErr=%.3f wallErr=%.3f corr=%.2f L=%d R=%d",
             headingError, wallError, correction, leftSpeed, rightSpeed
-        );*/
-    }
+        );
+    }*/
 
     // chatgpt version, not working well
     /*void regulatorCorridorImuLidar(double leftDist, double rightDist, int baseSpeed)
@@ -824,4 +859,5 @@ private:
 
     bool leftWallSeen_ = false;
     bool rightWallSeen_ = false;
+    bool do180turn_ = false;
 };

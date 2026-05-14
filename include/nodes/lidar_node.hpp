@@ -52,7 +52,7 @@ private:
         state_->lidarLeftBeam.store((double)data.leftBeam);
         state_->lidarRightBeam.store((double)data.rightBeam);
 
-        // RCLCPP_INFO(this->get_logger(), "Data from lidar: \n front:'%f',back:'%f',left:'%f',right:'%f'",data.front,data.back,data.right,data.left);
+        //RCLCPP_INFO(this->get_logger(), "Data from lidar: \n front:'%f',back:'%f',left:'%f',right:'%f'",data.front,data.back,data.right,data.left);
     }
 
     LidarFilterResults apply_filter(const sensor_msgs::msg::LaserScan &scan)
