@@ -120,10 +120,10 @@ private:
 
         double turnAngle = std::abs(normalizeAngle(yaw - startYaw));
 
-        RCLCPP_INFO(
+        /*RCLCPP_INFO(
             this->get_logger(),
             "Testing IMU, Yaw: %.4f, Start Yaw: %.4f, Turn angle: %.4f, State: %d",
-            yaw, startYaw, turnAngle, stateTestIMU);
+            yaw, startYaw, turnAngle, stateTestIMU);*/
 
         constexpr double TARGET = M_PI / 2.0;
 
@@ -240,10 +240,10 @@ private:
 
             //RCLCPP_INFO(this->get_logger(), "RIGHT WALL SEEN? %d d: %f, LEFT WALL SEEN? %d d: %f", rightWallSeen_, rightBeam, leftWallSeen_, leftBeam);
 
-            const double frontStop = 0.3;
+            const double frontStop = 0.32;
             const double openSide = 0.50;
             const double openFront = 0.45;
-            int baseSpeedCorridor = 145;
+            int baseSpeedCorridor = 148;
 
             bool frontOpen = !std::isfinite(front) || front > openFront;
             bool leftOpen  = !std::isfinite(left)  || left  > openSide;
@@ -263,7 +263,7 @@ private:
                     intersectionCounter_ = 0;
                 }
 
-                if(intersectionCounter_ > 10){
+                if(intersectionCounter_ > 20){
                     intersectionFlag_ = true;
                     std::cout << "Intersection detected, setting flag" << std::endl;
                     int aruco[2];
@@ -272,29 +272,42 @@ private:
                     state_->cameraData[0].store(-1);
                     state_->cameraData[1].store(-1);
                     int direction = 0;
+                    bool treasureSet = false;
                     for(int i = 0; i < 2; i++){
                         std::cout << "ARUCO[" << i << "] = " << aruco[i] << std::endl;
                         switch(aruco[i]){
-                        case 0:
-                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: STRAIGHT");
-                            direction = 0;
-                            break;
-                        case 1:
-                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: LEFT");
-                            direction = -1;
-                            break;
-                        case 2:
-                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: RIGHT");
-                            direction = 1;
-                            break;
                         case 10:
-                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: TREASURE FRONT");
+                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: TREASURE STRAIGHT");
+                            direction = 0;
+                            treasureSet = true;
                             break;
                         case 11:
                             RCLCPP_INFO(this->get_logger(), "ARUCO detected: TREASURE LEFT");
+                            direction = -1;
+                            treasureSet = true;
                             break;
                         case 12:
                             RCLCPP_INFO(this->get_logger(), "ARUCO detected: TREASURE RIGHT");
+                            direction = 1;
+                            treasureSet = true;
+                            break;
+                        case 0:
+                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: STRAIGHT");
+                            if(!treasureSet){
+                                direction = 0;
+                            }
+                            break;
+                        case 1:
+                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: LEFT");
+                            if(!treasureSet){
+                                direction = -1;
+                            }
+                            break;
+                        case 2:
+                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: RIGHT");
+                            if(!treasureSet){
+                                direction = 1;
+                            }
                             break;
                         case -99:
                             RCLCPP_INFO(this->get_logger(), "ARUCO detected: NOTHING");
@@ -314,7 +327,7 @@ private:
                         }
                     }
                     
-                    RCLCPP_INFO(this->get_logger(), "Chosen direction: %d", direction);
+                    //RCLCPP_INFO(this->get_logger(), "Chosen direction: %d", direction);
                     rightWallSeen_ = false;
                     leftWallSeen_ = false;
 
@@ -326,72 +339,14 @@ private:
                         return;
                     }
                     
-                    RCLCPP_INFO(
-                        this->get_logger(),
-                        "INTERSECTION detected: frontOpen=%d leftOpen=%d rightOpen=%d",
-                        frontOpen, leftOpen, rightOpen
-                    );
+                    // RCLCPP_INFO(
+                    //     this->get_logger(),
+                    //     "INTERSECTION detected: frontOpen=%d leftOpen=%d rightOpen=%d",
+                    //     frontOpen, leftOpen, rightOpen
+                    // );
                     std::cout << "INTERSECTION detected: frontOpen=" << frontOpen << " leftOpen=" << leftOpen << " rightOpen=" << rightOpen << std::endl;
                 }
             }
-
-            /*if(intersectionIgnoreCounter_ > 0){
-                intersectionIgnoreCounter_--;
-                intersectionCounter_ = 0;
-            }else{
-                if(intersectionDetected){
-                    intersectionCounter_++;
-                    std::cout << "Intersection counter: " << intersectionCounter_ << std::endl;
-                }else{
-                    intersectionCounter_ = 0;
-                }
-
-                if(intersectionCounter_ > 5){
-                    intersectionCounter_ = 0;
-
-                    int aruco[2];
-                    aruco[0] = state_->cameraData[0].load();
-                    aruco[1] = state_->cameraData[1].load();
-                    state_->cameraData[0].store(-1);
-                    state_->cameraData[1].store(-1);
-                    int direction = 0;
-                    for(int i = 0; i < 2; i++){
-                        std::cout << "ARUCO[" << i << "] = " << aruco[i] << std::endl;
-                        switch(aruco[i]){
-                        case 0:
-                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: LEFT");
-                            direction = 1;
-                            break;
-                        case 1:
-                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: FRONT");
-                            direction = 0;
-                            break;
-                        case 2:
-                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: RIGHT");
-                            direction = -1;
-                            break;
-                        default:
-                            RCLCPP_INFO(this->get_logger(), "ARUCO detected: UNKNOWN");
-                        }
-                    }
-                    
-
-                    if(direction != 0){
-                        turnDirection_ = direction;
-                        startYaw = state_->imuAngle.load();
-                        corridorState = TURNING;
-                        intersectionCounter_ = 0;
-                        return;
-                    }
-                    
-                    RCLCPP_INFO(
-                        this->get_logger(),
-                        "INTERSECTION detected: frontOpen=%d leftOpen=%d rightOpen=%d",
-                        frontOpen, leftOpen, rightOpen
-                    );
-                    std::cout << "INTERSECTION detected: frontOpen=" << frontOpen << " leftOpen=" << leftOpen << " rightOpen=" << rightOpen << std::endl;
-                }
-            }*/
 
             if (std::isfinite(front) && front < frontStop)
             {
@@ -413,7 +368,7 @@ private:
 
         case TURNING:
         {
-            RCLCPP_INFO(this->get_logger(), "TURNING, Front: %.3f, Left: %.3f, Right: %.3f", front, left, right);
+            /*RCLCPP_INFO(this->get_logger(), "TURNING, Front: %.3f, Left: %.3f, Right: %.3f", front, left, right);*/
             state_->corridorState.store(CorridorState::USING_IMU);
 
             double yaw = state_->imuAngle.load();
@@ -429,7 +384,7 @@ private:
                 }
                 else if (remaining > 0.35)
                 {
-                    return 4; // medium
+                    return 3; // medium
                 }
                 else
                 {
@@ -457,8 +412,8 @@ private:
         }
         case AFTER_TURN_CRAWLING:
         {
-            //stopMotors();
-            setMotorSpeeds(130, 130);
+            stopMotors();
+            //setMotorSpeeds(130, 130);
 
             if (++counter > 25)
             {
@@ -491,7 +446,7 @@ private:
         }
     }
 
-    void regulatorPID_lidar(double error, int baseSpeed)
+    /*void regulatorPID_lidar(double error, int baseSpeed)
     {
         static auto last_time = this->now();
 
@@ -548,9 +503,10 @@ private:
         {
             RCLCPP_INFO(this->get_logger(), "Moving STRAIGHT, Lidar Error: %.4f, Correction: %.4f, Left: %d, Right: %d\n", error, correction, left, right);
         }
-    }
+    }*/
 
-    void regulatorCorridorImuLidar(double leftDist, double rightDist, int baseSpeed)
+    // version with one wall
+    /*void regulatorCorridorImuLidar(double leftDist, double rightDist, int baseSpeed)
     {
         double yaw = state_->imuAngle.load();
 
@@ -567,7 +523,7 @@ private:
             wallError = 0.0;
         }
 
-        constexpr double kpHeading = 18.0;
+        constexpr double kpHeading = 14.0; // used to be 18
         constexpr double kpWall = 25.0;
 
         //double correction = kpHeading * headingError + kpWall * wallError;
@@ -587,15 +543,59 @@ private:
 
         setMotorSpeeds(leftSpeed, rightSpeed);
 
-        RCLCPP_INFO(
+        // RCLCPP_INFO(
+        //     this->get_logger(),
+        //     "CTRL headingErr=%.3f wallErr=%.3f corr=%.2f L=%d R=%d",
+        //     headingError, wallError, correction, leftSpeed, rightSpeed
+        // );
+    }*/
+
+    void regulatorCorridorImuLidar(double leftDist, double rightDist, int baseSpeed)
+    {
+        double yaw = state_->imuAngle.load();
+
+        double headingError = normalizeAngle(targetYaw_ - yaw);
+
+        constexpr double sideMaxDistance = 0.45;
+        double left = cappedDistance(leftDist, sideMaxDistance);
+        double right = cappedDistance(rightDist, sideMaxDistance);
+
+        double wallError = left - right;
+
+        if (left >= sideMaxDistance || right >= sideMaxDistance)
+        {
+            wallError = 0.0;
+        }
+
+        constexpr double kpHeading = 14.0; // used to be 18
+        constexpr double kpWall = 25.0;
+
+        //double correction = kpHeading * headingError + kpWall * wallError;
+        //correction = std::clamp(correction, -15.0, 15.0);
+
+        double headingCorrection = std::clamp(kpHeading * headingError, -4.0, 4.0);
+
+        double wallCorrection = kpWall * wallError;
+
+        double correction = headingCorrection + wallCorrection;
+
+        int leftSpeed = static_cast<int>(std::lround(baseSpeed - correction));
+        int rightSpeed = static_cast<int>(std::lround(baseSpeed + correction));
+
+        leftSpeed = std::clamp(leftSpeed, 127, 155);
+        rightSpeed = std::clamp(rightSpeed, 127, 155);
+
+        setMotorSpeeds(leftSpeed, rightSpeed);
+
+        /*RCLCPP_INFO(
             this->get_logger(),
             "CTRL headingErr=%.3f wallErr=%.3f corr=%.2f L=%d R=%d",
             headingError, wallError, correction, leftSpeed, rightSpeed
-        );
+        );*/
     }
 
-    /* // chatgpt version, not working well
-    void regulatorCorridorImuLidar(double leftDist, double rightDist, int baseSpeed)
+    // chatgpt version, not working well
+    /*void regulatorCorridorImuLidar(double leftDist, double rightDist, int baseSpeed)
     {
         double yaw = state_->imuAngle.load();
 
@@ -603,7 +603,7 @@ private:
             normalizeAngle(targetYaw_ - yaw);
 
         constexpr double sideMaxDistance = 0.45;
-        constexpr double desiredWallDistance = 0.22;
+        constexpr double desiredWallDistance = 0.25;
 
         double left = cappedDistance(leftDist, sideMaxDistance);
         double right = cappedDistance(rightDist, sideMaxDistance);
@@ -626,7 +626,7 @@ private:
             wallError = right - desiredWallDistance;
         }
 
-        constexpr double kpHeading = 3.0;
+        constexpr double kpHeading = 14.0;
         constexpr double kpWall = 25.0;
 
         double headingCorrection =
@@ -652,19 +652,19 @@ private:
 
         setMotorSpeeds(leftSpeed, rightSpeed);
 
-        RCLCPP_INFO(
-            this->get_logger(),
-            "CTRL headingErr=%.3f wallErr=%.3f "
-            "headCorr=%.2f wallCorr=%.2f "
-            "final=%.2f L=%d R=%d",
-            headingError,
-            wallError,
-            headingCorrection,
-            wallCorrection,
-            correction,
-            leftSpeed,
-            rightSpeed
-        );
+        // //RCLCPP_INFO(
+        //     this->get_logger(),
+        //     "CTRL headingErr=%.3f wallErr=%.3f "
+        //     "headCorr=%.2f wallCorr=%.2f "
+        //     "final=%.2f L=%d R=%d",
+        //     headingError,
+        //     wallError,
+        //     headingCorrection,
+        //     wallCorrection,
+        //     correction,
+        //     leftSpeed,
+        //     rightSpeed
+        // );
 
         if (leftValid && rightValid)
         {
